@@ -1,0 +1,3647 @@
+Lifted Disjoint Paths with Application in Multiple Object Tracking
+
+Andrea Hornakova * 1 Roberto Henschel * 2 Bodo Rosenhahn 2 Paul Swoboda 1
+
+arXiv:2006.14550v1 [cs.CV] 25 Jun 2020
+
+Abstract
+We present an extension to the disjoint paths problem in which additional lifted edges are introduced to provide path connectivity priors. We
+call the resulting optimization problem the lifted
+disjoint paths problem. We show that this problem is NP-hard by reduction from integer multicommodity flow and 3-SAT. To enable practical
+global optimization, we propose several classes of
+linear inequalities that produce a high-quality LPrelaxation. Additionally, we propose efficient cutting plane algorithms for separating the proposed
+linear inequalities. The lifted disjoint path problem is a natural model for multiple object tracking
+and allows an elegant mathematical formulation
+for long range temporal interactions. Lifted edges
+help to prevent id switches and to re-identify persons. Our lifted disjoint paths tracker achieves
+nearly optimal assignments with respect to input
+detections. As a consequence, it leads on all three
+main benchmarks of the MOT challenge, improving significantly over state-of-the-art.
+
+1. Introduction
+The disjoint paths problem, a special case of the network
+flow problem with flows constrained to be binary, is a classical combinatorial optimization problem for which fast
+combinatorial solvers exist. It is a natural model for the
+multiple object tracking problem (MOT) in computer vision (Zhang et al., 2008). In the form of the tracking-bydetection paradigm, MOT consists of two steps: First, an
+object detector is applied to each frame of a video sequence
+to find the putative locations of all objects appearing in the
+video. Then, in the data association step, false positive de*
+Equal contribution 1 Computer Vision and Machine Learning,
+Max Planck Institute for Informatics, Saarbrücken, Saarland, Germany 2 Institut for Image Processing, Leibniz University Hannover,
+Hannover, Niedersachsen, Germany. Correspondence to: Andrea
+Hornakova <andrea.hornakova@mpi-inf.mpg.de>, Roberto Henschel <henschel@tnt.uni-hannover.de>.
+
+Proceedings of the 37 th International Conference on Machine
+Learning, Vienna, Austria, PMLR 119, 2020. Copyright 2020 by
+the author(s).
+
+tections are removed while correct detections are associated
+to the corresponding identities, thereby forming trajectories.
+In this work, we concentrate on the latter task.
+While for MOT even very large data association instances
+can be solved using the disjoint paths formulation, it has
+been shown that the basic disjoint paths problem alone is
+not sufficient to provide trajectories of high accuracy. The
+main limitation for MOT is the implicit assumption of a
+first-order Markov chain. In particular, costs only indicate
+whether two detections directly follow each other in a track.
+Our contribution is three-fold: First, to overcome the limited
+expressiveness of disjoint paths, we propose to augment it
+with lifted edges which take into account long range interactions. We call the resulting problem the lifted disjoint paths
+problem, see Section 3. We prove the problem to be NP-hard
+in Section 6. Second, we study the optimization problem
+from a polyhedral perspective, proposing a high-quality
+linear programming relaxation, see Section 4. Separation
+routines for the proposed constraints are described in Section 5. Third, we apply the lifted disjoint paths problem to
+MOT and show that our solver significantly outperforms
+state-of-the-art trackers on the popular MOT challenge, see
+Section 7.
+We argue that our model has advantages from the modelling
+and optimization point of view. From the modelling standpoint, the lifted disjoint paths problem does not change the
+set of feasible solutions, but adds more expressive power
+to it. For MOT, this means that the set of feasible solutions, which naturally represent trajectories of objects, is
+preserved. The additional lifted edges represent connectivity
+priors. A lifted edge is active if and only if there is an active
+trajectory between its endpoints in the flow graph. For MOT,
+lifted edges take (dis-)similarity of object detection pairs
+represented by its endpoints into account. This allows to
+encourage or penalize an active path between the detections
+with possibly larger temporal distance. This helps to reidentify the same object and to prevent id-switches between
+distinct objects within long trajectories.
+From the optimization point of view, we study several nontrivial classes of linear inequalities that result in a highquality relaxation. The proposed inequalities depend nontrivially on the constraint structure of the underlying disjoint
+paths problem, see Section 4. We show that the polyhe-
+
+Lifted Disjoint Paths with Application in Multiple Object Tracking
+
+dral relaxation we consider is tighter than naively applying
+known inequalities. The proposed relaxation enables us
+to solve MOT problems via a global approach, in contrast
+to established approaches, which either use heuristics on
+complex models or global optimization on simpler models
+that do not exploit long range interaction. We present, to
+our knowledge, the first global optimization approach that
+incorporates long range interaction for MOT. This has several advantages: First, our optimization is not trapped in
+poor local optima or affected by initialization choices and
+is hence potentially more robust. Second, improvements in
+the discriminative power of features used to compute costs
+for the lifted disjoint paths problem directly correlate to
+better tracking performance, since no errors are introduced
+by suboptimal choices during optimization.
+Finally, we note that the proposed lifted disjoint path formulation is not inherently tied to MOT and can potentially be
+applied to further problems not related to MOT.
+Our code is available at https://github.com/
+AndreaHor/LifT_Solver.
+
+2. Related Work
+Disjoint paths problem. The disjoint paths problem can
+be solved with fast combinatorial solvers (Kovács, 2015).
+The shortest paths method for network flow specialized for
+the disjoint paths problem (Wang et al., 2019a) performs
+extremely well in practice. For the case of the two disjoint
+paths problem the specialized combinatorial algorithm by
+Suurballe’s (Suurballe, 1974) can be used.
+There exist several NP-complete extensions to the disjoint
+paths problem. The shortest disjoint paths problem with
+multiple source-sink pairs (Eilam-Tzoreff, 1998) is NPcomplete, as is the more general integer multicommodity
+flow problem (Even et al., 1976). The special case of the
+disjoint paths problem with two distinct source/sink pairs
+can be solved in polynomial time, however (Tholey, 2012).
+
+Connectivity priors & lifted edges. For several combinatorial problems, special connectivity inducing edges, which
+we will call lifted edges for our problem, have been introduced to improve expressiveness of the base problem.
+In the Markov Random Field literature, special connectivity
+inducing edges were studied from a polyhedral point of
+view in (Nowozin & Lampert, 2010). They were used in
+image analysis to indicate that two non-adjacent pixels come
+from the same object and hence they must be part of a
+contiguously labeled component of the underlying graph.
+For multicut (a.k.a. correlation clustering), a classical graph
+decomposition problem, lifted edges have been introduced
+in (Keuper et al., 2015) to model connectivity priors. A
+
+lifted edge expresses affinity of two nodes to be in the
+same/different connected component of the graph partition.
+Lifted multicut has been used for image and mesh segmentation (Keuper et al., 2015), connectomics (Beier et al., 2017)
+and cell tracking (Rempfler et al., 2017). A combination of
+the lifted multicut problem and Markov Random Fields has
+been proposed in (Levinkov et al., 2017) with applications
+in instance-separating semantic segmentation (Kirillov et al.,
+2017). A polyhedral study of lifted multicut was presented
+in (Horňáková et al., 2017).
+Yet, for the above problems, global optimization has only
+been reported for small instances.
+Disjoint paths for MOT. The data association step
+of MOT has been approached using the disjoint path
+setup (Berclaz et al., 2011; Zhang et al., 2008), since disjoint
+paths through a graph naturally model trajectories of multiple objects. Extension of the plain disjoint paths problem
+that disallow certain pairs of detections to occur simultaneously have been used to fuse different object detectors (Chari
+et al., 2015) and for multi-camera MOT (Hofmann et al.,
+2013; Leal-Taixé et al., 2012). The drawback of these approaches is that they cannot integrate long range information, in contrast to our proposed formulation.
+Other combinatorial approaches to MOT. The minimum cost arborescence problem, an extension of minimum
+spanning tree to directed graphs, has been used for MOT
+in (Henschel et al., 2014). In (Keuper et al., 2016; 2018;
+Kumar et al., 2014; Ristani & Tomasi, 2014; Tang et al.,
+2015; 2016) the multicut problem has been used for MOT
+and in (Babaee et al., 2018; Tang et al., 2017) additionally
+lifted edges have been used to better model long range temporal interactions. The maximum clique problem, which
+corresponds to multicut with complete graphs has been applied for MOT in (Zamir et al., 2012; Dehghan et al., 2015).
+Maximum independent set, which corresponds to maximum
+clique on the complement graph, has been used for MOT
+in (Brendel et al., 2011). The multigraph-matching problem,
+a generalization of the graph matching problem, has been
+applied to MOT in (Hu et al., 2019). Consistency of individual matched detections is ensured by cycle-consistency
+constraints coming from the multi-graph matching. The
+works (Henschel et al., 2018; 2016) reformulate tracking
+multiple objects with long temporal interactions as a binary
+quadratic program. If the problem size is small, the optimization problem can be solved optimally by reformulating
+it to an equivalent binary linear program (Henschel et al.,
+2019a; von Marcard et al., 2018). For large instances, an
+approximation is necessary. To this end, a specialized nonconvex Frank-Wolfe method can be used (Henschel et al.,
+2018). Common to the above state of the art trackers is
+that they either employ heuristic solvers or are limited in
+
+Lifted Disjoint Paths with Application in Multiple Object Tracking
+
+the integration of long range information, in contrast to our
+work.
+
+Contribution w.r.t. existing combinatorial approaches.
+It is widely acknowledged that one crucial ingredient for
+obtaining high-quality MOT results is to incorporate long
+range temporal information to re-identify detections and
+prevent id-switches. However, from a theoretical perspective, we believe that long range information has not yet been
+incorporated satisfactorily in optimization formulations for
+the data association step in MOT.
+In comparison to lifted multicut for MOT, we argue that
+from the modelling point of view, network flow has advantages. In multicut, clusters can be arbitrary, while in MOT,
+tracks are clusters that may not contain multiple detection
+hypotheses of distinct objects at the same time point. This
+exclusion constraint must be enforced in multicut explicitly
+via soft constraints, while the disjoint paths substructure automatically takes care of it. On the other hand, the lifted multicut approach (Tang et al., 2017) has used the possibility to
+cluster multiple detections in one time frame. This directly
+incorporates non-maxima suppression in the optimization,
+which however increases computational complexity.
+From a mathematical perspective, naively using polyhedral
+results from multicut is also not satisfactory. Specifically,
+one could naively obtain a polyhedral relaxation for the
+lifted disjoint paths problem by reusing the known polyhedral structure of lifted multicut (Horňáková et al., 2017) and
+additionally adding network flow constraints for the disjoint
+paths substructure. However, this would give a suboptimal
+polyhedral relaxation. We show in Section 4 that the underlying structure of the disjoint paths problem can be used to
+derive new and tighter constraints for lifted edges. This enables us to use a global optimization approach for MOT. To
+our knowledge, our work is the first one to combine global
+optimization with long range interactions for MOT.
+In comparison to works that propose non-convex algorithms
+or other heuristics for incorporating long range temporal
+edges (Henschel et al., 2018; Hu et al., 2019; Zamir et al.,
+2012; Dehghan et al., 2015) our approach yields a more principled approach and globally optimal optimization solutions
+via LP-based branch and bound algorithms.
+
+3. Problem Formulation
+Below we recapitulate the disjoint paths problem and extend it by defining lifted edges. We discuss how the lifted
+disjoint paths problem can naturally model MOT. Proofs for
+statements in all subsequent sections can be found in the
+Appendix, Section ??.
+
+Flow network and lifted graph. Consider two directed
+acyclic graphs G = (V, E) and G0 = (V 0 , E 0 ) where
+V 0 = V \{s, t}. The graph G = (V, E) represents the
+flow network and we denote by G0 the lifted graph. The
+two special nodes s and t of G denote source and sink node
+respectively. We further assume that every node in V is
+reachable from s, and t can be reached from it.
+We define the set of paths starting at v and ending in w as
+
+
+vi vi+1 ∈ E,
+vw-paths(G) = (v1 v2 , . . . , vl−1 vl ) :
+.
+v1 = v, vl = w
+(1)
+For a vw-path P we denote its edge set as PE and its node
+set as PV .
+The flow variables in G are denoted by y ∈ {0, 1}E for
+edges and x ∈ {0, 1}V for nodes. Allowing only 0/1 values
+of vertex variables reflects the requirement of vertex disjoint
+paths. Variables on the lifted edges E 0 are denoted by y 0 ∈
+0
+0
+= 1 means that nodes v and w are
+{0, 1}E . Here, yvw
+connected via the flow y in G. Formally,
+0
+yvw
+= 1 ⇔ ∃P ∈ vw-paths(G) s.t. ∀ij ∈ PE : yij = 1 .
+(2)
+
+Optimization problem. Given edge costs c ∈ RE , node
+0
+cost ω ∈ RV in flow network G and edge cost c0 ∈ RE
+0
+for the lifted graph G we define the lifted disjoint paths
+problem as
+min
+
+0
+
+hc, yi + hc0 , y 0 i + hω, xi
+
+y∈{0,1}E ,y 0 ∈{0,1}E ,
+x∈{0,1}V
+
+s.t.
+
+y node-disjoint s, t-flow in G,
+x flow through nodes of G
+y, y 0 feasible according to (2)
+(3)
+
+In Section 4, we present an ILP formulation of (3) by proposing several linear inequalities that lead to a high-quality
+linear relaxation.
+Graph construction for multiple object tracking. We
+argue that the lifted disjoint paths problem is an appropriate
+way of modelling the data association problem for MOT. In
+MOT, an unknown number of objects needs to be tracked
+across a video sequence. This problem can be naturally
+formalized by a graph G = (V, E) where its node set V
+represents either object detections or tracklets of objects. If
+V represents object detections, we can express it as follows:
+V = s ∪ V1 ∪ . . . ∪ VT ∪ t, where T is the number of frames
+and Vi denotes the object detections in time i. We introduce
+edges between adjacent time frames. An active flow on
+such an edge denotes correspondences of the same object.
+We also introduce skip edges between time frames that are
+farther apart. An active flow on a skip edge also denotes
+
+Lifted Disjoint Paths with Application in Multiple Object Tracking
+
+correspondences between the same object that, in contrast,
+may have been been occluded or not detected in intermediate
+time frames. This classical network flow formulation has
+been commonly used for MOT (Zhang et al., 2008).
+On top of the underlying flow formulation for MOT, we
+usually want to express that two detections belong to the
+same object connected by a possibly longer track with multiple detections in between. For that purpose, lifted edges
+with negative costs can be used. We say in such a case
+that an active lifted edge re-identifies two detections (Tang
+et al., 2017). If two detections with larger temporal distance
+should not be part of the same track, a positive valued lifted
+edge can be used. In this case the lifted edge is used to
+prevent id-switches.
+
+4. Constraints
+Below, we will first introduce constraints that give an integer
+linear program (ILP) of the lifted disjoint paths problem (3).
+The corresponding linear programming (LP) relaxation can
+be strenghtened by additional constraints that we present
+subsequently.
+Many constraints considered below will rely on whether a
+node w is reachable from another node v in the flow network.
+We define to this end the reachability relation R ⊂ V 2 via
+vw ∈ R ⇔ vw-paths(G) 6= ∅ .
+
+(4)
+
+In the special case of v = w, we also allow empty paths,
+which means ∀v ∈ V : vv ∈ R. This makes relation R
+reflexive.
+Flow conservation constraints. The flow variables y
+obey, as in classical network flow problems (Ahuja et al.,
+1988), the flow conservation constraints
+∀v ∈ V \ {s, t} :
+
+X
+u:uv∈E
+
+yuv =
+
+X
+
+yvw = xv . (5)
+
+w:vw∈E
+
+Constraining lifted edges. All the following constraints
+0
+restrict values of lifted edge variables yvw
+in order to ensure
+that they satisfy (2). Despite their sometimes complex form,
+they always obey the two basic principles:
+• If there is flow in G going from vertex v to vertex w, then
+0
+yvw
+= 1. The constraints of this form are (8), (10).
+• If there is a vw-cut in G with all edges labeled by zero
+0
+(i.e. no flow passes through this cut), then yvw
+= 0. We
+will mainly look at cuts that are induced by paths, i.e.
+edges that separate a path from the rest of the graph. The
+paths of interest will either originate at v or end at w.
+The constraints of this form are (6), (7), (9), (11), (12).
+
+Single node cut inequalities. Given a lifted edge vw ∈
+E 0 , if there is no flow going from vertex v which can poten0
+tially go to vertex w, then yvw
+= 0. Formally,
+0
+yvw
+≤
+
+X
+
+yvu .
+
+(6)
+
+u: vu∈E,
+uw∈R
+
+Similarly, if there is no flow going to w that can originate
+0
+from vertex v, then yvw
+= 0. Formally,
+0
+yvw
+≤
+
+X
+
+yuw .
+
+(7)
+
+u:uw∈E,
+vu∈R
+
+The number of constraints of the above type (5) is linear in
+the number of vertices, while (6) and (7) are linear in the
+number of lifted edges. Hence we add them into our initial
+constraint set during optimization.
+0
+Path inequalities. For lifted edge yvw
+it holds that if there
+is a flow in G going from v to w along a path P , then
+0
+yvw
+= 1. This constraint can be expressed by the following
+set of inequalities:
+
+∀vw ∈ E 0 ∀P ∈ vw-paths(G) :
+X
+X
+0
+yvw
+≥
+yvj −
+vj:j∈PV
+
+X
+
+yik
+
+(8)
+
+i∈PV \{v,w} k∈P
+/ V
+
+Here the first sum expresses the flow going from v to any
+vertex of path P . The second sum is the flow leaving path
+vertices PV before reaching w. In other words, if flow
+0
+does not leave PV , edge yvw
+must be active. Note that
+0
+inequality (8) implicitly enforces yvw
+to be active if any
+path vw-path P̃ with P̃V ⊂ PV is active.
+Remark 1. For the multicut problem, there exist path inequalities that enforce path properties in an analogous way.
+While the multicut path inequalities would yield the same
+set of feasible integral points, the resulting polyhedral relaxation would be weaker, see Proposition 3 in the Appendix.
+Path-induced cut inequalities. The path-induced cut inequalities generalize the single node cut inequalities (6)
+and (7) by allowing cuts induced by paths.
+Let a lifted edge vw ∈ E 0 , a node u from which w is
+reachable and a vu-path P be given. Consider the cut given
+by edges ik with i ∈ PV and k ∈
+/ PV but such that w is
+reachable from k. If the flow does not take any edge of this
+0
+cut, then yvw
+= 0. Formally,
+∀vw ∈ E 0 ∀P ∈ vu-paths(G) s.t. uw ∈ R ∧ u 6= w :
+X X
+0
+yvw
+≤
+yik .
+(9)
+i∈PV k∈P
+/ V,
+kw∈R
+
+Lifted Disjoint Paths with Application in Multiple Object Tracking
+
+Lifted inequalities. The path inequalities (8) and the pathinduced cut inequalities (9) only consider base edges on
+their right hand sides. We can generalize both (8) and (9)
+by including lifted edges in the paths as well. Conceptually,
+using lifted edges allows to represent all possible paths
+between their endpoints, which enables to formulate tighter
+inequalities, see Propositions 1 and 2.
+To that end consider the multigraph G ∪ G0 := (V, E ∪ E 0 ).
+For any edge ij ∈ E ∩ E 0 we always distinguish whether
+ij ∈ E or ij ∈ E 0 . For P ∈ vw-paths(G ∪ G0 ), we denote
+by PE and PE 0 edges of the path P in E and E 0 respectively.
+We require PE ∩ PE 0 = ∅.
+Lifted path inequalities. We generalize the path inequalities (8). Now the vw-path P may contain both edges in E
+0
+and E 0 . Whenever a lifted edge yij
+in the third sum in (10)
+is one, two cases can occur: (i) Flow goes out of P (uses
+vertices not in PV ) but reenters it again later. Then a base
+edge variable yik will be one in the second sum in (10)
+0
+and the values of yij
+and yik cancel out. (ii) A base edge
+0
+ij ∈ E ∩ E parallel to the lifted edge is active. Then the
+0
+variable yij in the fourth sum in (10) cancels out yij
+. The
+lifted path inequality becomes
+∀vw ∈ E 0 ∀P ∈ vw-paths(G ∪ G0 ) :
+X
+X
+X
+0
+yvw
+≥
+yvj −
+yik
+j∈PV
+
++
+
+∀vw ∈ E 0 ∀P ∈ vu-paths (G ∪ G0 ) s.t. uw ∈ E 0 :
+X
+X
+X
+0
+0
+yvw
+≤
+yik −
+yij
+i∈PV \u k∈P
+/ V,
+kw∈R
+
++
+
+X
+
+ij∈PE 0
+
+0
+yij + yuw
+
+(12)
+
+ij∈PE 0 ∩E
+
+Proposition 2. The lifted path-induced cut inequalities (11)
+define a strictly tighter relaxation than the path-induced cut
+inequalities (9).
+Furthermore the lifted path-induced cut inequalities (11)
+and (12) define a strictly better relaxation than (11) alone.
+Symmetric cut inequalities. Inequalities (7) provide a
+symmetric counterpart to inequalities (6). We can also formulate symmetric counterparts to inequalities (9), (11) and
+(12) by swapping the role of v and w. All constraints (9),
+(11) and (12) concentrate on paths originating in v. The
+symmetric inequalities are obtained by studying all paths
+ending in w. These symmetric inequalities are described
+in Appendix Section 10.2. Relations analogous to those described in Proposition 2 hold for the symmetric counterparts
+as well. The symmetric inequalities also strengthen the relaxation strictly. For the exact statements, see propositions
+in Appendix Section 10.2.
+
+i∈PV \{v,w} k∈P
+/ V
+
+X
+
+0
+yij
+
+−
+
+ij∈PE 0
+
+X
+
+yij .
+
+(10)
+
+ij∈PE 0 ∩E
+
+Whenever the path in (10) consists only of base edges PE ,
+the resulting inequality becomes a path inequality (8).
+Proposition 1. The lifted path inequalities (10) provide a
+strictly better relaxation than the path inequalities (8).
+Lifted path-induced cut inequalities. We generalize the
+path-induced cut inequalities (9). Let a lifted edge vw ∈ E 0
+and a vu-path P in G ∪ G0 be given. In contrast to the basic
+version (9), a lifted edge ij ∈ PE 0 can be taken. This can
+occur in two cases: Either the flow leaves PV via a base
+edge ik, k ∈
+/ PV or a base edge ij ∈ E ∩ E 0 parallel to the
+lifted edge is taken. Both cases are accounted for by terms
+in the first and the third sum in (11) below.
+
+∀vw ∈ E 0 ∀P ∈ vu-paths(G ∪ G0 ) s.t. uw ∈ R ∧ u 6= w :
+X X
+X
+X
+0
+0
+yvw
+≤
+yik −
+yij
++
+yij (11)
+i∈PV k∈P
+/ V,
+kw∈R
+
+0
+ing the sum of base edges outgoing from u by yuw
+.
+
+ij∈PE 0
+
+ij∈PE 0 ∩E
+
+Assume that the last node u of path P is connected via a
+lifted edge with w. Then we can strengthen (11) by replac-
+
+5. Separation
+We solve the lifted disjoint paths problem (3) with the state
+of the art integer linear program solver Gurobi (Gurobi Optimization, 2019). Since there are exponentially many constraints of the form (8), (9), (10), (11) and (12), we do not
+add them initially. Instead, we start with constraints (5), (6)
+and (7) and find the optimal integer solution. In the separation procedures described below we check if any of the
+advanced constraints are violated and add those that are to
+the active constraint set. We resolve the tightened problem
+and iterate until we have found a feasible solution to the
+overall problem (3).
+Algorithms 1 and 2 describe the separation procedures for
+adding lifted path constraints (10), and lifted path-induced
+cut constraints (11) and (12). Since path constraints (8) and
+path-induced cut inequalities (9) are special cases of those
+above, they are also accounted for.
+Separation for path inequalities. Algorithm 1 iterates
+over all active st-paths. For every path P 1 , labels of all
+lifted edges connecting two vertices in PV1 are inspected.
+If the lifted edge variable is zero, Algorithm 1 will extract
+a path in G ∪ G0 connecting the endpoints and add the
+resulting lifted path inequality (10) to the active constraint
+set.
+
+Lifted Disjoint Paths with Application in Multiple Object Tracking
+
+Algorithm 1 Separation for lifted path inequalities (10)
+Define E 1 = {e ∈ E : ye = 1}, G1 = (V, E 1 )
+for all P 1 ∈ st-paths (G1 ) do
+0
+for all yvw
+= 0 : v ∈ PV1 ∧ w ∈ PV1 do
+P := Extract_path(P 1 , v, w)
+0
+Add constr. (10) for yvw
+with P .
+end for
+end for
+
+Separation for path-induced cut inequalities. Algorithm 2 iterates over all active st-paths. For every path
+P 1 , lifted edges that start in PV1 but do not end in PV1 are
+inspected. If their label is one, Algorithm 2 will extract a
+subpath of P 1 for either (12) or (11) and add the respective
+inequality to the active constraint set.
+Algorithm 2 Separation for lifted path-induced cut inequalities (11) and (12)
+Define E 1 = {e ∈ E : ye = 1}, G1 = (V, E 1 )
+for all P 1 ∈ st-paths (G1 ) do
+0
+/ PV1 do
+= 1 : v ∈ PV1 ∧ w ∈
+for all yvw
+0
+1
+if ∃u ∈ PV : yuw = 0 ∧ vu ∈ R then
+P := Extract_path(P 1 , v, u)
+0
+Add constr. (12) for yvw
+with P .
+else
+u := last vertex of P 1 such that uw ∈ R
+P := Extract_path (P1 , v, u)
+0
+with P .
+Add constr. (11) for yvw
+end if
+end for
+end for
+
+Complexity of separation. Both Algorithms 1 and 2 can
+be implemented efficiently such that they are linear in |E 1 |
+(i.e. in the number of active edges of graph G). In our
+implementation, we traverse all active st-paths from the
+end to the beginning and directly store correctly labelled
+lifted edges that originate on the already processed subpaths.
+These lifted edges can be used later as edges in PE 0 in
+0
+(10)-(12) or as yuw
+= 0 in (12).
+
+6. Complexity
+Below, we show that the lifted disjoint paths problem (3)
+is NP-hard. The following Theorems state that even its restricted versions using only negative or only positive lifted
+edges are NP-hard. The proofs use reductions from two
+known NP-complete problems. Theorem 1 is proven by
+reduction from integer multicommodity flow (Even et al.,
+1976) and Theorem 2 by reduction from 3-SAT (Cook,
+1971).
+
+Algorithm 3 Extract_path(P 1 , v, w)
+P 0 := vw-subpath of P 1 , P := ∅
+for j ∈ PV0 from end of path to beginning do
+0
+if ∃ edge ij ∈ E 0 , i ∈ PV0 , yij
+= 1 then
+0
+Add ij to PE , skip to node i ∈ PV0
+else
+Add ij from P 0 to PE
+end if
+end for
+output P = PE ∪ PE 0
+Theorem 1. Lifted disjoint paths problem (3) with negative
+lifted edges only is NP-hard.
+Theorem 2. Lifted disjoint paths problem (3) with positive
+lifted edges only is NP-hard.
+
+7. Experiments
+We conduct several experiments on MOT showing the merit
+of using lifted disjoint paths for the tracking problem. Below,
+we describe our problem construction, cost learning for base
+and lifted edges, preprocessing and post-processing steps
+and report resulting performance. More details about our
+experiments are provided in Appendix, Section ??.
+7.1. Graph Construction.
+Two-step procedure. Due to the computational complexity of the problem, we cannot solve entire video sequences
+straightforwardly. In order to make the problem tractable,
+we apply the following two-step procedure. In the first
+step, the solver is applied on graphs over person detections
+but only for small time intervals consisting of a few dozen
+video frames. The tracks resulting from the first step are
+used for extracting tracklets. In the second step, the solver
+is applied on newly created graphs G and G0 where vertices
+correspond to the obtained tracklets. Edges and edge costs
+between tracklets are obtained by aggregating original edges
+resp. edge costs between person detections. The tracks resulting from the second step may be suboptimal with respect
+to the original objective function defined over person detections. Therefore, we identify points where splitting a track
+leads to an improvement of the original objective value and
+extract new tracklets from the divided tracks. Multiple iterations of the second step are performed until no improving
+split points are found in the output tracks. This two-step
+procedure improves the objective w.r.t. the original objective (3) in every iteration. Since there are only finitely many
+trackings, the procedure terminates finitely. In practice, only
+a few iterations are necessary.
+Graph sparsification. For our experiments, we use edges
+between detections up to 2sec temporal distance. These
+
+Lifted Disjoint Paths with Application in Multiple Object Tracking
+
+long range edges cause high computational complexity for
+the first step. In order to reduce it, we apply sparsification
+on both base and lifted graphs. For the base edges, we select
+for every v ∈ V 0 its K nearest (lowest-cost) neighbors
+from every subsequent time frame within an allowed time
+gap. Lifted edges with costs close to zero are not included,
+since they are not discriminative. Lifted edges connecting
+detections with high time gap are included more sparsely
+than lifted edges having lower time gaps. We use dense
+graphs in the second step.
+Costs. Initially, in the first step, we set ωv = 0 for all
+vertices v ∈ V . For the second step, where V represents
+tracklets, ωv is set to the cost of outputting tracklet v as
+a final trajectory. Specifically, ωv is the sum of costs of
+base edges between consecutive detections in the tracklet
+and the cost of lifted edges between all pairs of detections
+contained in the tracklet. The cost of a base edge between
+two tracklets is given by the cost of the original base edge
+connecting the last detection in the first tracklet with the first
+detection in the subsequent tracklet. The cost of a lifted edge
+between two tracklets is obtained by summing up the costs
+of original lifted edges between detections contained in the
+tracklets. This ensures that the costs of the tracklet solution
+corresponds to the costs of the original problem. We set
+cost of all edges from the source node s and to the sink
+node t to zero. Setting of detection costs and in/out costs
+to zero reduces the number of hyperparameters that usually
+needs to be incorporated by other methods. Moreover, our
+method does not include temporal decay of edge costs since
+the formulation directly prefers short range base edges over
+the long range ones.
+7.2. Preprocessing and Post-processing
+As is common for tracking by detection, we perform preand postprecessing to compensate for detector inaccuracies.
+Input filtering. Given a set of input detections derived
+from a detector, we follow the approach of (Bergmann et al.,
+2019), a leading tracker for the MOT challenge, to reject
+false positive detections and to correct misaligned ones. For
+this, each input detection is send through the regression
+and classification part of their detector. In more detail, all
+tracking parts involved in the tracker Tracktor (Bergmann
+et al., 2019) are deactivated, such that it only reshapes and
+eventually rejects input detections, without assigning labels
+to them. Input detections are rejected if Tracktor’s detector
+outputs a confidence score σactive ≤ 0.5.
+Tracktor also applies a non-maxima-surpression on the
+reshaped input detections, where we use the threshold
+λnew = 0.6.
+Inter- and extrapolation. Even if all input detections have
+been assigned to the correct identities by our solver, there
+
+might still be missing detections in case that a person has not
+been detected in some frames. We recover missing detections within the time range of a trajectory, which we denote
+as interpolation. Further, we extend a trajectory in forward
+and backward directions, which we denote as extrapolation.
+To this end, we follow (Bergmann et al., 2019) and apply
+their object detector to recover missing positions based on
+the visual information at the last known position. Finally,
+for sequences filmed from a static camera, we perform linear interpolation on the remaining gaps. These sequences
+can be automatically detected using DeepMatching on the
+regions outside detection boxes.
+To demonstrate the performance using traditional postprocessing, we also evaluate our tracker using only linear
+interpolation as post-processing in all sequences.
+7.3. Cost Learning
+Costs for base edges E and lifted edges E 0 are computed
+equally, since they both indicate whether two detections are
+from the same object or not. For an edge e = vw, we denote
+with dwi (v) the detection width corresponding to node v.
+Visual cues. We exploit two different appearance features:
+Given two detections, the re-identification descriptor utilizes
+global appearance statistics, while the deep-matching descriptor relies on fine-grained pixel-wise correspondences.
+We employ the state-of-the-art re-identification network (Zheng et al., 2019) and train it on MOT17 train
+set (Milan et al., 2016) together with additional reidentification datasets (Zheng et al., 2015; Wei et al., 2018;
+Ristani et al., 2016). The obtained feature value fre-id (e) ∈
+[−1, 1] is modified in order to better reflect the uncertainty
+of a connection. We truncate values smaller 0 (corresponding to improbable connections) and re-scale the rest. First,
+we normalize scores between each detection v and all detections in every time frame Vj through the score of the most
+probable connecting edge vw. Second, all other connections
+than vw are downscaled.
+Our second visual cue utilizes DeepMatching (DM) (Weinzaepfel et al., 2013) to establishes pixelwise correspondences between two images. It thus serves as a reliable
+tracking feature (Tang et al., 2016; Henschel et al., 2018;
+2019b).
+We apply DM between boxes in two images and compute
+the DM intersection over union (Tang et al., 2016; Henschel
+et al., 2018) w.r.t. the whole detection boxes and on five
+subboxes (left/right, upper/middle/lower part). In addition,
+we measure for all points in a given subbox whether their
+matched endpoints are in the corresponding subbox again or
+not. This gives two additional error measures for deviation
+in x and y-directions. Thus, in total we obtain a feature
+
+Lifted Disjoint Paths with Application in Multiple Object Tracking
+
+vector fDM (e) ∈ [0, 1]8 . In order to assess the reliability
+of DM features, density of matching points is computed in
+each box and its subboxes. The smaller value is chosen for
+each box pair. This results in feature ρ ∈ [0, 1]6 .
+Motion constraints. We penalize for improbable motions
+by comparing the maximal displacement of DM endpoints
+within the sequence with the displacements of detection
+boxes. Assignment hypotheses of pairs of boxes representing improbable motions are penalized with a large cost.
+Spatio-temporal cues. Our spatio-temporal cues utilize a
+simple motion compensation by computing the median DM
+displacement between correspondences of the background.
+We assume a linear motion model, similar to (Ristani &
+Tomasi, 2018) and penalize deviations of detections from the
+estimated motion trajectory. This enforces spatio-temporally
+consistency of detections within one trajectory. Furthermore,
+we penalize improbable large person movements by relating
+velocities (in pixels per seconds) in horizontal direction to
+box width: ftrans (e) = log(vx (e)/ min{dwi (v), dwi (w)}).
+Fusion of input features. We construct a neural network
+consisting of fully connected layers, batch normalization
+and relu units taking the above described features and time
+differences as input and outputting scores for assignment hypotheses. The final layer uses a sigmoid activation function
+for producing a score in [0, 1]. We refer to the supplemental
+material for the exact structure of the neural network and
+details about the training procedure.
+7.4. Experiment Setup
+In order to assess the suitability of the proposed lifted disjoint paths formulation for MOT, we conduct extensive experiments on three challenging benchmarks: MOT15 (LealTaixé et al., 2015), MOT16 and MOT17 (Milan et al., 2016),
+resulting in 39 test sequences. The sequences are filmed
+from static and moving cameras. While MOT16 and MOT17
+share the same sequences, MOT17 provides three different
+detectors in order to study the dependence of the tracking
+quality on the input detections. We perform analysis and
+parameter tuning for our tracker on the MOT17 train set,
+even when our tracker is applied to the MOT15 sequences
+to ensure that our tracker is not prone to overfitting. We
+follow the MOT challenge protocol and use the detections
+provided by the respective benchmarks. All experiments on
+the training set are evaluated using a leave-one-out crossvalidation. This includes all of our training procedures, in
+particular also the training of the re-identification network.
+To measure the tracking quality, the multiple object tracking
+accuracy (MOTA) (Bernardin & Stiefelhagen, 2008) and
+the IDF1 metric (Ristani et al., 2016) are regarded as the
+
+most meaningful ones. The first incorporates the number
+of false negatives (FN), false positives (FP) and identity
+switches (IDS), thereby focusing on the coverage of persons.
+The latter assesses the consistency w.r.t. identities. Further
+tracking metrics (MT, ML) are defined in (Li et al., 2009).
+7.5. Benefit of Long Range Edges
+We investigate the importance of using long range information for MOT. To this end, we apply our proposed tracker
+on the MOT17 training sequence with varying maximal
+time gap, for which base and lifted edges are created between nodes. In order to assess the influence of the time
+gap on the tracking quality, we measure the assignment
+quality in terms of the MOTA and IDF1 metrics, without
+performing any inter- or extrapolation. To assess how well
+the assignment part is solved by our tracker, we compute
+the maximum achievable metrics given the filtered input
+detections and admissible assignment hypotheses within
+maximal time gaps. A detailed description of how we obtain the optimal assignments are given in the appendix in
+Section 10.6. From the result in Table 1, we see essentialy
+constant MOTA scores. This is due the fact that selecting
+correct connections does not change MOTA significantly except after inter- and extrapolation (which we have excluded
+in Table 1). However, we see a significant improvement in
+the IDF1 score, which directly penalizes wrong connections.
+Here, long range edges help greatly. Moreover, both metrics,
+ID precision and ID recall, clearly increase with increasing
+time gap. This shows that improvements by incorporating
+more temporal information come from using longer skip
+edges (impact on IDR) but most importantly, precision increases greatly. This means that ID switches are avoided
+thanks to lifted edges. Furthermore, the experiment shows
+that our designed features together with the lifted disjoint
+paths formulation (3) are well-suited for the MOT problem
+delivering nearly optimal assignments.
+
+MOTA (ours)↑
+MOTA (optimal)↑
+IDF1 (ours) ↑
+IDF1 (optimal)↑
+IDP (ours) ↑
+IDP (optimal)↑
+IDR (ours) ↑
+IDR (optimal)↑
+
+0.3s
+52.6
+53.0
+55.7
+56.0
+79.8
+80.4
+42.7
+42.9
+
+0.5s
+52.7
+53.1
+57.8
+58.6
+82.9
+84.2
+44.5
+45.0
+
+1s
+52.8
+53.3
+61.8
+63.2
+88.5
+90.8
+47.4
+48.5
+
+1.5s
+52.8
+53.3
+63.8
+65.7
+91.4
+94.3
+49.0
+50.4
+
+2s
+52.8
+53.4
+64.3
+66.8
+92.1
+95.9
+49.4
+51.3
+
+∞
+53.4
+69.9
+100.0
+53.4
+
+Table 1. Assignment quality of our solver without interpolation
+or extrapolation on the MOT17 train set with different maximal
+time gaps in seconds. Rows 1,3,5 and 7 show the results by our
+solver, rows 2,4,6 and 8 show the maximally achievable bounds
+with admissible assignment hypotheses up to the specified time
+gap. Bold numbers represent the best values per row.
+
+Lifted Disjoint Paths with Application in Multiple Object Tracking
+
+2D MOT15
+
+MOT16
+
+MOT17
+
+Method
+
+MOTA↑
+
+IDF1↑
+
+MT↑
+
+ML↓
+
+FP↓
+
+FN↓
+
+IDS↓
+
+Frag↓
+
+Lif_T (ours)
+Lif_TsimInt (ours)
+Tracktor17
+JBNOT
+FAMNet
+eTC17
+eHAF17
+
+60.5
+58.2
+53.5
+52.6
+52.0
+51.9
+51.8
+
+65.6
+65.2
+52.3
+50.8
+48.7
+58.1
+54.7
+
+27.0
+28.6
+19.5
+19.7
+19.1
+23.1
+23.4
+
+33.6
+33.6
+36.6
+35.8
+33.4
+35.5
+37.9
+
+14966
+16850
+12201
+31572
+14138
+36164
+33212
+
+206619
+217944
+248047
+232659
+253616
+232783
+236772
+
+1189
+1022
+2072
+3050
+3072
+2288
+1834
+
+3476
+2062
+4611
+3792
+5318
+3071
+2739
+
+Lif_T (ours)
+Lif_TsimInt (ours)
+Tracktor16
+NOTA
+HCC
+eTC
+KCF16
+
+61.3
+57.5
+54.4
+49.8
+49.3
+49.2
+48.8
+
+64.7
+64.1
+52.5
+55.3
+50.7
+56.1
+47.2
+
+27.0
+25.4
+19.0
+17.9
+17.8
+17.3
+15.8
+
+34.0
+34.7
+36.9
+37.7
+39.9
+40.3
+38.1
+
+4844
+4249
+3280
+7248
+5333
+8400
+5875
+
+65401
+72868
+79149
+83614
+86795
+83702
+86567
+
+389
+335
+682
+614
+391
+606
+906
+
+1034
+604
+1480
+1372
+535
+882
+1116
+
+Lif_T (ours)
+Lif_TsimInt (ours)
+Tracktor15
+KCF
+AP_HWDPL_p
+STRN
+AMIR15
+
+52.5
+47.2
+44.1
+38.9
+38.5
+38.1
+37.6
+
+60.0
+57.6
+46.7
+44.5
+47.1
+46.6
+46.0
+
+33.8
+27.0
+18.0
+16.6
+8.7
+11.5
+15.8
+
+25.8
+29.8
+26.2
+31.5
+37.4
+33.4
+26.8
+
+6837
+7635
+6477
+7321
+4005
+5451
+7933
+
+21610
+24277
+26577
+29501
+33203
+31571
+29397
+
+730
+554
+1318
+720
+586
+1033
+1026
+
+1047
+803
+1790
+1440
+1263
+2665
+2024
+
+Table 2. We compare our tracker Lif_T with the five best performing competing solvers w.r.t. MOTA from the MOT challenge. Tracktor (Bergmann et al., 2019), JBNOT (Henschel et al., 2019b), FAMNet (Chu & Ling, 2019), eTC (Wang et al., 2019b), eHAF (Sheng
+et al., 2018), NOTA (Chen et al., 2019), HCC (Ma et al., 2018), KCF (Chu et al., 2019), AP_HWDPL_p (Chen et al., 2017), STRN (Xu
+et al., 2019) and AMIR15 (Sadeghian et al., 2017). In addition, we compare the results to our tracker Lif_TsimInt that uses only a simple
+interpolation method (linear interpolation) as post-processing in all sequences. We outperform competing solvers on most metrics on all
+three MOT Challenge benchmarks, using Lif_T and Lif_TsimInt. Arrows indicate whether low or high metric values are better.
+
+7.6. Benchmark Evaluations
+
+8. Conclusion
+
+Finally, we compare our tracking performance on the
+MOT15, MOT16 and MOT17 benchmarks with all trackers
+listed on the MOTChallenge which have been peer-reviewed
+and correspond to published work. The three benchmark
+datasets consist of 11/7/7 training and test sequences for
+MOT15/16/17 respectively. They are the standard benchmark datasets for MOT. The results in Table 2 show the
+tracking performance of our tracker together with the best
+5 performing trackers, accumulated over all sequences of
+the respective benchmarks. The evaluations show that we
+outperform all tracking systems by a large margin on all considered benchmarks. On MOT17, we improve the MOTA
+score from 53.5 to 60.5 and the IDF1 score from 52.3 to 65.6,
+which corresponds to an improvement of 13% in terms of
+MOTA and almost 25% in terms of the IDF1 score, indicating the effectiveness of the lifted edges. We observe similar
+improvements across all three benchmarks. These results
+reflect the near-optimal assignment performance observed
+on the MOT17 train set in Sect. 7.5. Finally, using only
+simple linear interpolation as post-processing (Lif_TsimInt),
+our tracker achieves 58.2 MOTA and 65.2 IDF1. Even then,
+our system clearly outperforms existing tracking systems.
+On average, the ILP solver needs 26.6 min. per sequence.
+Detailed runtimes are available in Table 5 in Appendix.
+
+We have shown that for the MOT challenge datasets we
+reach nearly optimal data association performance. We conjecture that further improvements would have to come from
+better detectors, better inter- and extrapolation and more
+powerful solvers for our formulation to take into account
+even longer time-gaps. Our polyhedral work offers the basis
+for writing such more powerful solvers.
+
+9. Acknowledgement
+This work was funded by the Deutsche Forschungsgemeinschaft (DFG, German Research Foundation) under Germany’s Excellence Strategy within the Cluster of Excellence
+PhoenixD (EXC 2122). We thank Laura Leal-Taixé for initiating the collaboration. We thank all reviewers for their
+valuable comments.
+
+Lifted Disjoint Paths with Application in Multiple Object Tracking
+
+References
+Ahuja, R. K., Magnanti, T. L., and Orlin, J. B. Network
+flows. Cambridge, Mass.: Alfred P. Sloan School of
+Management, Massachusetts, 1988.
+Babaee, M., Athar, A., and Rigoll, G. Multiple people
+tracking using hierarchical deep tracklet re-identification.
+arXiv preprint arXiv:1811.04091, 2018.
+Beier, T., Pape, C., Rahaman, N., Prange, T., Berg, S., Bock,
+D. D., Cardona, A., Knott, G. W., Plaza, S. M., Scheffer,
+L. K., et al. Multicut brings automated neurite segmentation closer to human performance. Nature Methods, 14
+(2):101, 2017.
+Berclaz, J., Fleuret, F., Turetken, E., and Fua, P. Multiple
+object tracking using k-shortest paths optimization. IEEE
+Transactions on Pattern Analysis and Machine Intelligence, 33(9):1806–1819, 2011.
+
+Cook, S. A. The complexity of theorem-proving procedures.
+In Proceedings of the third annual ACM symposium on
+Theory of computing, pp. 151–158. ACM, 1971.
+Dehghan, A., Modiri Assari, S., and Shah, M. GMMCP
+tracker: Globally optimal generalized maximum multi
+clique problem for multiple object tracking. In IEEE
+Conference on Computer Vision and Pattern Recognition,
+pp. 4091–4099, 2015.
+Eilam-Tzoreff, T. The disjoint shortest paths problem. Discrete Applied Mathematics, 85(2):113–138, 1998.
+Even, S., Itai, A., and Shamir, A. On the complexity of
+timetable and multicommodity flow problems. SIAM J.
+Comput., 5:691–703, 12 1976. doi: 10.1137/0205048.
+Gurobi Optimization, L. Gurobi optimizer reference manual,
+2019. URL http://www.gurobi.com.
+
+Bergmann, P., Meinhardt, T., and Leal-Taixé, L. Tracking without bells and whistles. In IEEE International
+Conference on Computer Vision, pp. 941–951, 2019.
+
+Henschel, R., Leal-Taixé, L., and Rosenhahn, B. Efficient
+multiple people tracking using minimum cost arborescences. In German Conference on Pattern Recognition,
+pp. 265–276. Springer, 2014.
+
+Bernardin, K. and Stiefelhagen, R. Evaluating multiple object tracking performance: the clear mot metrics.
+EURASIP Journal on Image and Video Processing, 2008:
+1–10, 2008.
+
+Henschel, R., Leal-Taixé, L., Rosenhahn, B., and Schindler,
+K. Tracking with multi-level features. arXiv preprint
+arXiv:1607.07304, 2016.
+
+Brendel, W., Amer, M., and Todorovic, S. Multiobject
+tracking as maximum weight independent set. In IEEE
+Conference on Computer Vision and Pattern Recognition,
+pp. 1273–1280. IEEE, 2011.
+
+Henschel, R., Leal-Taixé, L., Cremers, D., and Rosenhahn,
+B. Fusion of head and full-body detectors for multi-object
+tracking. In IEEE Conference on Computer Vision and
+Pattern Recognition Workshops, June 2018.
+
+Chari, V., Lacoste-Julien, S., Laptev, I., and Sivic, J. On
+pairwise costs for network flow multi-object tracking.
+In IEEE Conference on Computer Vision and Pattern
+Recognition, pp. 5537–5545, 2015.
+
+Henschel, R., von Marcard, T., and Rosenhahn, B. Simultaneous identification and tracking of multiple people using
+video and imus. In Proceedings of the IEEE Conference
+on Computer Vision and Pattern Recognition Workshops,
+pp. 0–0, 2019a.
+
+Chen, L., Ai, H., Shang, C., Zhuang, Z., and Bai, B. Online
+multi-object tracking with convolutional neural networks.
+In IEEE International Conference on Image Processing,
+pp. 645–649. IEEE, 2017.
+
+Henschel, R., Zou, Y., and Rosenhahn, B. Multiple people tracking using body and joint detections. In IEEE
+Conference on Computer Vision and Pattern Recognition
+Workshops, pp. 0–0, 2019b.
+
+Chen, L., Ai, H., Chen, R., and Zhuang, Z. Aggregate tracklet appearance features for multi-object tracking. IEEE
+Signal Processing Letters, 26(11):1613–1617, 2019.
+
+Hofmann, M., Wolf, D., and Rigoll, G. Hypergraphs for
+joint multi-view reconstruction and multi-object tracking.
+In IEEE Conference on Computer Vision and Pattern
+Recognition, pp. 3650–3657, 2013.
+
+Chu, P. and Ling, H. Famnet: Joint learning of feature, affinity and multi-dimensional assignment for online multiple
+object tracking. In IEEE International Conference on
+Computer Vision, pp. 6172–6181, 2019.
+Chu, P., Fan, H., Tan, C. C., and Ling, H. Online multiobject tracking with instance-aware tracker and dynamic
+model refreshment. In IEEE Winter Conference on Applications of Computer Vision, pp. 161–170. IEEE, 2019.
+
+Horňáková, A., Lange, J.-H., and Andres, B. Analysis and
+optimization of graph decompositions by lifted multicuts.
+In International Conference on Machine Learning, 2017.
+Hu, W., Shi, X., Zhou, Z., Xing, J., Ling, H., and Maybank, S. Dual L1-normalized context aware tensor
+power iteration and its applications to multi-object tracking and multi-graph matching. International Journal
+
+Lifted Disjoint Paths with Application in Multiple Object Tracking
+
+of Computer Vision, Oct 2019. ISSN 1573-1405. doi:
+10.1007/s11263-019-01231-y. URL https://doi.
+org/10.1007/s11263-019-01231-y.
+
+Ma, L., Tang, S., Black, M. J., and Van Gool, L. Customized
+multi-person tracker. In Asian Conference on Computer
+Vision, pp. 612–628. Springer, 2018.
+
+Keuper, M., Levinkov, E., Bonneel, N., Lavoué, G., Brox,
+T., and Andres, B. Efficient decomposition of image and
+mesh graphs by lifted multicuts. In IEEE International
+Conference on Computer Vision, 2015. doi: 10.1109/
+ICCV.2015.204.
+
+Milan, A., Leal-Taixé, L., Reid, I., Roth, S., and Schindler,
+K. MOT16: A benchmark for multi-object tracking. arXiv:1603.00831 [cs], March 2016. URL
+http://arxiv.org/abs/1603.00831. arXiv:
+1603.00831.
+
+Keuper, M., Tang, S., Zhongjie, Y., Andres, B., Brox, T.,
+and Schiele, B. A multi-cut formulation for joint segmentation and tracking of multiple objects. arXiv preprint
+arXiv:1607.06317, 2016.
+
+Nowozin, S. and Lampert, C. H. Global interactions in
+random field models: A potential function ensuring connectedness. SIAM Journal on Imaging Sciences, 3(4):
+1048–1074, 2010. doi: 10.1137/090752614.
+
+Keuper, M., Tang, S., Andres, B., Brox, T., and Schiele,
+B. Motion segmentation & multiple object tracking by
+correlation co-clustering. IEEE Transactions on Pattern
+Analysis and Machine Intelligence, 42(1):140–153, 2018.
+Kirillov, A., Levinkov, E., Andres, B., Savchynskyy, B.,
+and Rother, C. Instancecut: from edges to instances with
+multicut. In IEEE Conference on Computer Vision and
+Pattern Recognition, pp. 5008–5017, 2017.
+Kovács, P. Minimum-cost flow algorithms: an experimental
+evaluation. Optimization Methods and Software, 30(1):
+94–127, 2015.
+
+Rempfler, M., Lange, J.-H., Jug, F., Blasse, C., Myers, E. W.,
+Menze, B. H., and Andres, B. Efficient algorithms for
+moral lineage tracing. In IEEE International Conference
+on Computer Vision, pp. 4695–4704, 2017.
+Ristani, E. and Tomasi, C. Tracking multiple people online
+and in real time. In Asian Conference on Computer Vision,
+pp. 444–459. Springer, 2014.
+Ristani, E. and Tomasi, C. Features for multi-target multicamera tracking and re-identification. In IEEE Conference on Computer Vision and Pattern Recognition, pp.
+6036–6046, 2018.
+
+Kumar, R., Charpiat, G., and Thonnat, M. Multiple object tracking by efficient graph partitioning. In Asian
+Conference on Computer Vision, pp. 445–460. Springer,
+2014.
+
+Ristani, E., Solera, F., Zou, R. S., Cucchiara, R., and Tomasi,
+C. Performance measures and a data set for multi-target,
+multi-camera tracking. In European Conference on Computer Vision Workshop on Benchmarking Multi-Target
+Tracking, 2016.
+
+Leal-Taixé, L., Pons-Moll, G., and Rosenhahn, B. Branchand-price global optimization for multi-view multi-target
+tracking. In IEEE Conference on Computer Vision and
+Pattern Recognition, pp. 1987–1994. IEEE, 2012.
+
+Sadeghian, A., Alahi, A., and Savarese, S. Tracking the
+untrackable: Learning to track multiple cues with longterm dependencies. In IEEE International Conference on
+Computer Vision, pp. 300–311, 2017.
+
+Leal-Taixé, L., Milan, A., Reid, I., Roth, S., and Schindler,
+K. MOTChallenge 2015: Towards a benchmark for multitarget tracking. arXiv:1504.01942 [cs], April 2015. URL
+http://arxiv.org/abs/1504.01942. arXiv:
+1504.01942.
+
+Sheng, H., Zhang, Y., Chen, J., Xiong, Z., and Zhang, J.
+Heterogeneous association graph fusion for target association in multiple object tracking. IEEE Transactions
+on Circuits and Systems for Video Technology, 29(11):
+3269–3280, 2018.
+
+Levinkov, E., Uhrig, J., Tang, S., Omran, M., Insafutdinov,
+E., Kirillov, A., Rother, C., Brox, T., Schiele, B., and
+Andres, B. Joint graph decomposition & node labeling:
+Problem, algorithms, applications. In IEEE Conference
+on Computer Vision and Pattern Recognition, pp. 6012–
+6020, 2017.
+Li, Y., Huang, C., and Nevatia, R. Learning to associate:
+Hybridboosted multi-target tracker for crowded scene.
+In IEEE Conference on Computer Vision and Pattern
+Recognition, pp. 2953–2960. IEEE, 2009.
+
+Suurballe, J. Disjoint paths in a network. Networks, 4(2):
+125–145, 1974.
+Tang, S., Andres, B., Andriluka, M., and Schiele, B. Subgraph decomposition for multi-target tracking. In IEEE
+Conference on Computer Vision and Pattern Recognition,
+pp. 5033–5041, 2015.
+Tang, S., Andres, B., Andriluka, M., and Schiele, B. Multiperson tracking by multicut and deep matching. In European Conference on Computer Vision, pp. 100–111.
+Springer, 2016.
+
+Lifted Disjoint Paths with Application in Multiple Object Tracking
+
+Tang, S., Andriluka, M., Andres, B., and Schiele, B. Multiple people tracking by lifted multicut and person reidentification. In IEEE Conference on Computer Vision
+and Pattern Recognition, 2017.
+Tholey, T. Linear time algorithms for two disjoint paths
+problems on directed acyclic graphs. Theoretical Computer Science, 465:35–48, 2012.
+von Marcard, T., Henschel, R., Black, M. J., Rosenhahn,
+B., and Pons-Moll, G. Recovering accurate 3d human
+pose in the wild using imus and a moving camera. In
+Proceedings of the European Conference on Computer
+Vision (ECCV), pp. 601–617, 2018.
+Wang, C., Wang, Y., Wang, Y., Wu, C.-T., and Yu, G. mussp:
+Efficient min-cost flow algorithm for multi-object tracking. In Advances in Neural Information Processing Systems, pp. 423–432, 2019a.
+Wang, G., Wang, Y., Zhang, H., Gu, R., and Hwang, J.-N.
+Exploit the connectivity: Multi-object tracking with trackletnet. In ACM International Conference on Multimedia,
+pp. 482–490, 2019b.
+Wei, L., Zhang, S., Gao, W., and Tian, Q. Person transfer
+gan to bridge domain gap for person re-identification.
+In IEEE Conference on Computer Vision and Pattern
+Recognition, pp. 79–88, 2018.
+Weinzaepfel, P., Revaud, J., Harchaoui, Z., and Schmid, C.
+Deepflow: Large displacement optical flow with deep
+matching. In IEEE Intenational Conference on Computer
+Vision, Sydney, Australia, December 2013. URL http:
+//hal.inria.fr/hal-00873592.
+Xu, J., Cao, Y., Zhang, Z., and Hu, H. Spatial-temporal
+relation networks for multi-object tracking. In IEEE
+International Conference on Computer Vision, pp. 3988–
+3998, 2019.
+Zamir, A. R., Dehghan, A., and Shah, M. GMCP-tracker:
+Global multi-object tracking using generalized minimum
+clique graphs. In European Conference on Computer
+Vision, pp. 343–356. Springer, 2012.
+Zhang, L., Li, Y., and Nevatia, R. Global data association
+for multi-object tracking using network flows. In IEEE
+Conference on Computer Vision and Pattern Recognition,
+pp. 1–8. IEEE, 2008.
+Zheng, L., Shen, L., Tian, L., Wang, S., Wang, J., and Tian,
+Q. Scalable person re-identification: A benchmark. In
+IEEE International Conference on Computer Vision, pp.
+1116–1124, 2015.
+Zheng, Z., Yang, X., Yu, Z., Zheng, L., Yang, Y., and Kautz,
+J. Joint discriminative and generative learning for person
+
+re-identification. In IEEE Conference on Computer Vision
+and Pattern Recognition, 2019.
+
+Lifted Disjoint Paths with Application in Multiple Object Tracking
+Appendix
+
+Andrea Hornakova * 1 Roberto Henschel * 2 Bodo Rosenhahn 2 Paul Swoboda 1
+
+Abstract
+
+Let us rewrite the right hand side of (8) for a path P ∈
+vw-paths(G):
+X
+X
+X
+0
+yvw
+≥
+yvj −
+yik =
+
+This appendix supplements our work by presenting missing proofs regarding the solver and details
+about our tracker.
+
+vj:j∈PV
+
+Sections 10.1 up to Section 10.4 provide proofs
+used in Sections 4 and 6.
+
+=
+
+i∈PV \{v,w} k∈P
+/ V
+
+yvj −
+
+vj:j∈PV
+
+Section 10.6 provides further information how
+the optimal assignments used in Section 7.5 were
+obtained. The impact of the employed postprocessing used in our tracker is analyzed in Section 10.7. Details about the used fusion network
+are given in Section 10.8. Finally, evaluation metrics for all tracked sequences are provided in Section 10.9.
+
+=
+
+X
+
+≥
+
+X
+ij∈PE
+
+=
+
+X
+
+X
+
+(xi −
+
+i∈PV \{v,w}
+
+X
+
+yij −
+
+X
+
+yij −
+
+i∈PV \w j∈PV
+
+X
+
+yij ) =
+
+j∈PV
+
+xi ≥
+
+i∈PV \{v,w}
+
+X
+
+1=
+
+i∈PV \{v,w}
+
+(yij − 1) + 1 .
+
+(14)
+
+ij∈PE
+
+10. Appendix
+10.1. Proofs for Section 4
+Proposition 3. Path inequalities (8) define a strictly tighter
+relaxation of the lifted disjoint path problem than the lifted
+multicut path inequalities
+∀vw ∈ E 0 ∀P ∈vw-paths(G) :
+X
+0
+yvw
+≥
+(yij − 1) + 1 .
+
+X
+
+• Let us prove that SB ( SM
+0
+We prove that there exists (y, y 0 ) ∈ [0, 1]E ×[0, 1]E such
+that (y, y 0 ) satisfies (13) and does not satisfy (8). An example is given in Figure 1. There are four possible paths
+from v to w. If we use Constraints (13), the highest lower
+0
+bound on yvw
+is given by path P = (vv2 , v2 v4 , v4 w) and
+it is as follows:
+0
+yvw
+≥ (0.5 − 1) + (0.5 − 1) + (1 − 1) + 1 = 0 .
+
+(13)
+
+ij∈PE
+
+Proof. Let us define the following sets:
+
+Let us apply Constraint (8) using path P =
+(vv1 , v1 v2 , v2 v3 , v3 v4 , v4 w). We obtain the following
+0
+threshold on yvw
+0
+yvw
+≥ 0.5 + 0.5 − 0 − 0 = 1 .
+
+0
+
+SB = {(y, y 0 ) ∈ [0, 1]E × [0, 1]E |(y, y 0 ) satisfy (8)} ,
+0
+
+SM = {(y, y 0 ) ∈ [0, 1]E × [0, 1]E |(y, y 0 ) satisfy (13)} .
+• Let us prove that SB ⊂ SM
+*
+Equal contribution 1 Computer Vision and Machine Learning,
+Max Planck Institute for Informatics, Saarbrücken, Saarland, Germany 2 Institut for Image Processing, Leibniz University Hannover,
+Hannover, Niedersachsen, Germany. Correspondence to: Andrea
+Hornakova <andrea.hornakova@mpi-inf.mpg.de>, Roberto Henschel <henschel@tnt.uni-hannover.de>.
+
+Proceedings of the 37 th International Conference on Machine
+Learning, Vienna, Austria, PMLR 119, 2020. Copyright 2020 by
+the author(s).
+
+Proposition 1. The lifted path inequalities (10) provide a
+strictly better relaxation than the path inequalities (8).
+Proof. Let us define the following sets
+0
+
+SB = {(y, y 0 ) ∈ [0, 1]E × [0, 1]E |(y, y 0 ) satisfy (8)} ,
+0
+
+SL = {(y, y 0 ) ∈ [0, 1]E × [0, 1]E |(y, y 0 ) satisfy (10)} .
+• Let us prove that SL ⊂ SB :
+Note that every path P ∈ vw-paths(G) belongs to the set
+of vw-paths(G ∪ G0 ) too. It just holds that PE 0 = ∅. Let
+
+Lifted Disjoint Paths with Application in Multiple Object Tracking
+?
+
+?
+
+0.5
+
+v
+
+0.5
+
+0.5
+0.5
+
+v1
+
+0
+
+v2
+
+0.5
+
+v3
+
+0.5
+
+v4
+
+1
+0
+
+v5
+
+0.5
+
+w
+v6
+
+Figure 1. Failure case for lifted multicut path inequality (13). The
+path inequality (8) gives the correct lower bound for lifted edge
+0
+yvw
+in this case. Example for Proposition 3.
+
+us rewrite the right hands side of the inequality from (10)
+for such P ∈ vw-path(G ∪ G0 ) where PE 0 = ∅.
+X
+X
+X
+0
+yvw
+≥
+yvj −
+yik
+vj:j∈PV
+
++
+
+i∈PV \{v,w} k∈P
+/ V
+
+X
+
+0
+yij
+
+−
+
+ij∈PE 0
+
+=
+
+X
+vj:j∈PV
+
+yvj −
+
+X
+
+yij =
+
+ij∈PE 0 ∩E
+
+X
+
+X
+
+v
+
+yik .
+
+• Let us prove that SL ( SB :
+0
+We prove that there exists (y, y 0 ) ∈ [0, 1]E × [0, 1]E
+such that (y, y 0 ) satisfies (8) and does not satisfy (10).
+See the graph in Figure 2. There are four possible paths
+from v to w in G. If we use Constraints (8), all the paths
+0
+give us the same lower bound on yvw
+0
+yvw
+≥ 1 − 0.5 − 0.5 = 0 .
+
+If we use Constraints (10) with path P = (vv1 , v1 v4 , v4 w)
+where PE 0 = {v1 v4 , v4 w}, we obtain
+0
+yvw
+≥ 1 − 0.5 − 0.5 − 0.5 − 0.5 + 1 + 1 = 1 .
+
+v1
+
+v3
+
+0.5
+
+0.5
+
+1
+0.5
+
+0.5
+
+1
+
+v4
+0.5
+
+v5
+
+0.5
+
+v6
+
+w
+0.5
+
+Figure 2. Exemplary case where the path inequalities (8) give a
+0
+trivial lower bound on lifted edge yvw
+. The lifted path inequality (10) gives the correct lower bound. Example for Proposition 1.
+
+• First, we prove SL1 ⊂ SB :
+We use the same argument as in the proof of Proposition 1. Every path P ∈ vw-paths(G) belongs to the set
+of vw-paths(G ∪ G0 ) and it holds that PE 0 = ∅. Let us
+rewrite the right hands side of the inequality from (11)
+for such P ∈ vw-path(G ∪ G0 ) where PE 0 = ∅.
+X X
+X
+X
+0
+0
+yvw
+≤
+yik −
+yij
++
+yij =
+i∈PV k∈P
+/ V
+kw∈R
+
+i∈PV \{v,w} k∈P
+/ V
+
+Which is exactly the right hand side of (8). Therefore,
+0
+any pair of real vectors (y, y 0 ) ∈ [0, 1]E × [0, 1]E that
+satisfies (10) must satisfy (8) as well.
+
+1
+
+v2
+
+=
+
+X X
+
+ij∈PE 0
+
+ij∈PE 0 ∩E
+
+yik .
+
+i∈PV k∈P
+/ V
+kw∈R
+
+Which is exactly the right hand side of (9). Therefore,
+0
+any pair of real vectors (y, y 0 ) ∈ [0, 1]E × [0, 1]E that
+satisfies (11) must satisfy (9).
+• Let us prove SL1 ( SB :
+0
+We prove that there exists (y, y 0 ) ∈ [0, 1]E × [0, 1]E
+such that (y, y 0 ) satisfies (9) and does not satisfy (11).
+See the example in Figure 3. There are four possible
+paths in G from v to either u1 or u2 . They are P1 =
+(vv3 , v3 u1 ), P2 = (vv2 , v2 u1 ), P3 = (vv3 , v3 u2 ), P4 =
+(vv2 , v2 u2 ). Using (11), all of them give us the same
+0
+threshold on yvw
+:
+0
+yvw
+≤ 0.5 + 0.5 + 0 = 1 .
+
+Proposition 2. The lifted path-induced cut inequalities (11)
+define a strictly tighter relaxation than the path-induced cut
+inequalities (9).
+Furthermore the lifted path-induced cut inequalities (11)
+and (12) define a strictly better relaxation than (11) alone.
+Proof. Let us define the following sets
+0
+
+SB = {(y, y 0 ) ∈ [0, 1]E × [0, 1]E |(y, y 0 ) satisfy (9)} ,
+0
+
+SL1 = {(y, y 0 ) ∈ [0, 1]E × [0, 1]E |(y, y 0 ) satisfy (11)} ,
+0
+
+SL2 = {(y, y 0 ) ∈ [0, 1]E × [0, 1]E |(y, y 0 ) satisfy (12)} .
+
+If we use Constraint (11) with path P = (vu1 ), we obtain
+the following threshold:
+0
+yvw
+≤ 0.5 + 0.5 + 0 − 1 = 0 .
+
+• Let us prove that SL1 ∩ SL2 ( SL1
+It holds trivially that SL1 ∩ SL2 ⊂ SL1 . Let us prove
+0
+that there exists (y, y 0 ) ∈ [0, 1]E × [0, 1]E such that
+(y, y 0 ) ∈ SL1 and (y, y 0 ) ∈
+/ SL1 ∩ SL2 .
+See the example graph in Figure 4. Similarly as in Figure 3, there are four possible paths from v to either u1 or
+u2 in G. There are no active lifted edges that would en0
+able us to obtain a better upper bound on yvw
+using (11)
+
+Lifted Disjoint Paths with Application in Multiple Object Tracking
+
+Inequalities symmetric to (12)
+
+1
+
+v
+
+0.5
+
+v3
+
+0.5
+
+0.5
+0.5
+
+1
+
+u1
+
+∀vw ∈ E 0 ∀P ∈ uw-paths (G ∪ G0 ) s.t. vu ∈ E 0 :
+X
+X
+X
+0
+0
+yvw
+≤
+yki −
+yij
+
+w̃
+
+0
+
+?
+
+v1
+
+0.5
+
+v2
+
+0.5
+
+0.5
+0.5
+
+0
+
+u2
+
+1
+
+i∈PV \u k∈P
+/ V,
+vk∈R
+
+w
+
++
+
+1
+
+1
+
+v3
+
+0
+
+0.5
+0.5
+
+u1
+0
+
+?
+
+v1
+
+0
+
+v2
+
+1
+
+ij∈PE 0
+
+0
+yij + yvu
+.
+
+(17)
+
+ij∈PE 0 ∩E
+
+Figure 3. Exemplary case where the path-induced cut inequali0
+ties (9) fail to give non-trivial upper bounds for lifted edge yvw
+.
+The lifted path-induced cut-inequalities (11) give the correct upper
+bound in this case. Example for Proposition 2.
+
+v
+
+X
+
+0.5
+0.5
+
+u2
+
+0.5
+
+w̃
+
+0.5
+0.5
+0.5
+
+Proof. Analogical to the proof of Proposition 2. See Figure 5 for example analogical to the one in Figure 3 and
+Figure 6 for example analogical to the one in Figure 4.
+
+w
+
+Figure 4. Exemplary failure case for the lifted path-induced cut
+inequalities (11). The lifted path-induced cut inequalities (12)
+0
+give the correct upper bound for lifted edge yvw
+. Example for
+Proposition 2.
+
+than the following:
+0
+yvw
+
+Proposition 4. The lifted path-induced cut inequalities (16)
+define a strictly tighter relaxation than the path-induced cut
+inequalities (15).
+The lifted path-induced cut inequalities (16) and (17) define
+a strictly better relaxation than (16) alone.
+
+Proposition 5. 1. The path-induced cut inequalities (9)
+together with their symmetric counterpart (15) define
+a strictly tighter relaxation than inequalities (9) alone.
+2. The path-induced cut inequalities (11) together with
+their symmetric counterpart (16) define a strictly
+tighter relaxation than inequalities (11) alone.
+3. Using path-induced cut inequalities (17) together with
+(11), (12) and (16) strictly improves the relaxation.
+
+≤ 1.
+
+However, if we use Constraints (12) with path P = (vv3 )
+and yv0 3 w = 0, we obtain
+0
+yvw
+≤ 0.
+
+Proof. 1. See the example in Figure 7.
+0
+0
+Upper bound on yvw
+by (9): yvw
+≤ 0.5 + 0.5 = 1.
+0
+0
+Upper bound on yvw by (15): yvw
+≤ 0.
+2. See the example in Figure 5.
+0
+0
+Upper bound on yvw
+by (11): yvw
+≤ 0.5 + 0.5 = 1.
+0
+Upper bound on yvw by (16) using path P = (u2 w):
+0
+yvw
+≤ 0 + 0.5 + 0.5 − 1 = 0.
+
+10.2. Symmetric Form of Cut Inequalities
+Inequalities symmetric to (9):
+∀vw ∈ E 0 ∀P ∈ uw-paths(G) s.t. vu ∈ R ∧ u 6= v :
+X X
+0
+yvw
+≤
+yki .
+(15)
+
+3. See the example in Figure 6.
+0
+0
+Upper bounds on yvw
+by (11), (12), (16): yvw
+≤ 1.
+0
+Upper bound on yvw by (17) using path P = (uw)
+0
+0
+and yvu
+= 0: yvw
+≤ 0.
+
+i∈PV k∈P
+/ V,
+vk∈R
+
+Inequalities symmetric to (11)
+
+10.3. Other Valid Inequalities
+
+∀vw ∈ E 0 ∀P ∈ uw-paths(G ∪ G0 ) s.t. vu ∈ R ∧ u 6= v :
+X X
+X
+0
+0
+yvw
+≤
+yki −
+yij
+
+Basic flow constraints (5) together with the advanced constrains on lifted edges (6)-(12) are sufficient for defining
+the set of feasible solutions of the lifted disjoint paths problem (3). Moreover, they define an efficient LP relaxation
+(Section 4) and enable efficient separation procedures (Section 5). Below, we present lifted flow inequalities specific to
+the lifted disjoint paths problem applied to MOT that help
+
+i∈PV k∈P
+/ V,
+vk∈R
+
++
+
+X
+ij∈PE 0 ∩E
+
+ij∈PE 0
+
+yij .
+
+(16)
+
+Lifted Disjoint Paths with Application in Multiple Object Tracking
+
+to improve the speed of our ILP solver. The inequalities
+depend on the fact that every node can be connected to maximally one node in each time frame. Therefore the number
+of lifted edges originating (or ending) in a given point and
+ending (resp. originating) in a specific time frame is at most
+one.
+
+1
+1
+
+v
+
+u1
+
+0
+
+0.5
+
+0.5
+
+v3
+
+0.5
+
+?
+0
+
+v1
+
+u2
+
+1
+
+0.5
+
+v2
+
+0.5
+
+w̃
+∀k, l ∈ {1, . . . , T } : k > l, ∀v ∈ Vl :
+X
+0
+yvu
+≤ xv ,
+
+0.5
+0.5
+
+w
+
+0.5
+
+(18)
+
+vu∈E 0 :u∈Vk
+
+1
+
+∀k, l ∈ {1, . . . , T } : k < l, ∀w ∈ Vl :
+X
+0
+yuw
+≤ xw .
+
+0
+yvw
+
+Figure 5. The best upper bound on
+is provided by inequalities (16). Example for Proposition 4 and Proposition 5.
+
+(19)
+
+uw∈E 0 :u∈Vk
+
+The number of constraints (18) and (19) is linear in the
+number of vertices. Therefore, we add them to our initial
+constraint set. This enables to reduce the search space for
+the branch and bound method in the early solver stages
+when only few constraints of type (8)-(12) have been added.
+10.4. Proofs for Section 6 Complexity
+0.5
+
+v
+0.5
+0.5
+
+v1
+
+v3
+
+0.5
+0.5
+
+w̃
+0
+0
+
+?
+
+0
+0.5
+
+1
+
+v4
+
+v2
+
+0.5
+
+u
+
+0.5
+
+w
+
+1
+
+0
+Figure 6. The best upper bound on yvw
+is provided by inequalities (17). Example for Proposition 4 and Proposition 5.
+
+We define YGG0 to be the set of all (y, y 0 ) ∈ {0, 1}E ×
+0
+{0, 1}E such that (y, y 0 ) are feasible solutions of the lifted
+disjoint path problem (3).
+Integer multicommodity flow. The integer multicommodity flow problem is defined on a directed graph G =
+(V, E) with edge capacities c ∈ NE and source/sink pairs
+si ti and edge flows fi ∈ NE and demands Ri , i = 1, . . . , k.
+The aim is to send k flows from their sources to their sinks
+such that the flows obey the edge capacities. Formally,
+k
+X
+
+fei ≤ ce
+
+∀e ∈ E (20)
+
+i=1
+
+X
+u:uv∈E
+
+v
+
+0.5
+
+v3
+
+0.5
+
+0.5
+
+1
+
+v1
+
+v8
+
+1
+
+v4
+
+0.5
+
+0.5
+
+w̃
+
+0.5
+
+v7
+0
+
+0 0
+
+0
+
+0
+
+0.5
+
+0.5
+?
+
+v2
+ṽ
+
+v5
+
+1
+
+v6
+
+1
+
+0
+
+w
+
+0
+Figure 7. The best upper bound on yvw
+is provided by inequalities (15). Example for Proposition 5.
+
+X
+
+i
+fuv
+=
+
+X
+
+i
+fvw
+
+∀i ∈ [k] ∀v ∈
+/ {si , ti } (21)
+
+w:vw∈E
+
+fsii v ≥ Ri
+
+∀i ∈ [k] (22)
+
+v:si v∈E
+
+where [k] denotes the set {1, . . . , k}. Even has shown
+in (Even et al., 1976) that the integer multicommodity flow
+problem is NP-complete also in the case of unit capacity
+edges and two source sink pairs. Below we detail a construction that gives us a correspondence between edge-disjoint
+paths in G and node-disjoint paths in the transformed graph
+G. This construction is similar to transforming a graph into
+its line graph. The lifted edges in the transformed graph will
+count how many units of flow go from sources to sinks.
+Lemma 1. There exists a polynomial transformation from
+any graph G with source/sink pairs si , ti , i = 1, . . . , k
+
+Lifted Disjoint Paths with Application in Multiple Object Tracking
+
+with demands Ri to a pair of graphs G and G0 with
+edge costs c and c0 respectively such that there exists a
+feasible integer multicommodity flow in G if and only if
+the lifted disjoint paths problem forPG, G0 has objective
+k
+min(y,y0 )∈YGG0 hc, yi + hc0 , y 0 i ≤ − i=1 Ri .
+Proof. Without loss of generality, we consider these feasible
+P flowi sets f1 , . . . , fk where it holds ∀i ∈ [k] :
+si v∈E fsi v = Ri . Note that if the flow of commodity
+i is higher than its demand Ri , we can reduce it to Ri by removing the flow across one or more si ti -paths in G without
+violating other constraints.
+We first detail the graph transformation (see Figures 8 and
+9).
+
+s2
+
+s1
+
+c
+
+e
+
+b
+
+d
+
+a
+
+-1
+s22
+
+s2 c
+
+s12
+
+s2 b
+
+• Add to V vertices
+ments of each commodity i.
+
+-1
+-1
+-1
+
+s
+
+ce
+
+et2
+
+be
+
+dt2
+
+bd
+
+• Add vertices s and t to V .
+i
+s1i , s2i , . . . , sR
+i
+
+t1
+
+Figure 8. Integer multicommodity flow network transformation:
+Original graph.
+
+• For all edges ij ∈ E add a vertex vij to V .
+• For each pair of vertices vij , vjk ∈ V add an edge
+(vij , vjk ) to E.
+
+t2
+
+t
+
+-1
+
+representing require-
+
+s31
+
+s1 b
+
+s21
+
+s1 a
+
+• For each vertex sri add an edge (s, sri ) to E.
+• For each pair of vertices sri , vsi j add edge (sri , vsi j ) to
+E.
+• For all vkti ∈ V (representing and edge from k to ti in
+G) add an edge (vkti , t) to E.
+• For all pairs of vertices vsi j vkti ∈ V add an edge
+(vsi j , vkti ) to E 0 . That is, the lifted edges connect all
+vertices representing edges from si in G with vertices
+representing the edges to ti in G.
+• Cost function on base edges ∀e ∈ E : ce = 0.
+• Cost function on lifted edges ∀e0 ∈ E 0 : c0e0 = −1.
+An illustration of this construction can be seen in Figures 8
+and 9. Note that the construction of G in (Even et al., 1976)
+allows si = sj for i 6= j. In this case, we still construct
+separate vertices for their incident edges in G.
+Every path P = (si k1 , k1 k2 , . . . , kn ti ) in G can be assigned
+to a path P = (ssri , sri vsi k1 , vsi k1 vk1 k2 , . . . , vkn ti t) in G
+where r ∈ [Ri ] can be chosen arbitrarily and vice versa.
+Note that such a path P saturates exactly one lifted edge
+(vsi k1 , vkn ti ). Moreover, every feasible P
+set of flow functions
+f1 , . . . , fk satisfying for all i ∈ [k] : si v∈E fsii v = Ri
+defines a set of edge-disjoint paths from s1 , . . . , sk to
+Pk
+t1 , . . . , tk in G. This set corresponds to a set of i=1 Ri
+st-paths in G whose edges and vertices are disjoint and
+where every path saturates exactly one lifted edge vsi j vkti .
+Every lifted edge contributes with −1 to the total cost. So,
+Pk
+this set of disjoint st-paths has total cost − i=1 Ri .
+Reversely, let us have a set of vertex- and edge-disjoint
+
+-1
+-1
+-1
+
+et1
+
+at1
+
+Figure 9. Integer multicommodity flow network transformation.
+Transformed graph from Figure 8 for flow demands R1 = 2, R2 =
+2. Edges without label have cost 0.
+
+Pk
+st-paths in G of size i=1 Ri where every path contains
+some vsi j vkti -path as its subpath and therefore its cost is
+Pk
+− i=1 Ri . This set defines uniquely a set of feasible flow
+functions f1 , . . . , fk .
+So, there exist feasible functions f1 , . . . , fk satisfying fi =
+Pk
+Ri for all i ∈ [k] iff
+min
+γ(y, y 0 ) ≤ − i=1 Ri .
+0
+(y,y )∈YGG0
+
+Theorem 1. Lifted disjoint paths problem (3) with negative
+lifted edges only is NP-hard.
+Proof. The NP-complete integer multicommodity flow
+problem with unit edge capacities can be reduced in polynomial time to the lifted disjoint paths problem (3) with
+negative lifted edges only. The transformation is described
+in Lemma 1.
+
+3-SAT. The boolean satisfiability problem (SAT) is a classical NP-complete problem (Cook, 1971). A transformation
+
+Lifted Disjoint Paths with Application in Multiple Object Tracking
+
+obtain a 3-SAT solution from P as follows. If via ∈ PV ,
+set variable a := true. If vj b̄ ∈ P , set variable b := f alse.
+Variables not contained as labels of vertices in PV can have
+arbitrary values.
+Similarly, every solution of 3-SAT problem defines at least
+one path P ∈ st-paths(G) that has cost −(k − 1).
+
+4
+4
+
+a
+
+s
+
+b
+
+c̄
+
+4
+
+-1
+-1
+a
+ā
+ā
+-1
+-1
+-1 -1
+-1
+-1
+-1
+-1 -1
+-1 -1
+-1
+-1
+
+c
+
+-1
+
+c
+
+-1
+
+-1
+
+4
+
+-1
+
+-1 -1
+-1
+e
+d¯
+-1
+
+4
+
+c
+
+t
+
+-1
+
+ē
+
+Figure 10. Reduction to lifted disjoint paths problem for 3-SAT
+¯ ∧ (ā ∨ c ∨ e) ∧ (ā ∨ c ∨ ē).
+formula (a ∨ b ∨ c̄) ∧ (a ∨ c ∨ d)
+
+from its NP-complete special version 3-SAT is commonly
+used for proving than a problem is NP-hard or NP-complete.
+Theorem 2. Lifted disjoint paths problem (3) with positive
+lifted edges only is NP-hard.
+Proof. Below, we detail a transformation from 3-SAT to
+the lifted disjoint paths problem with positive lifted edges
+only. For the transformation, it holds that a 3-SAT formula consisting of k clauses has a true assignment iff
+min
+γ(y, y 0 ) ≤ −(k − 1).
+0
+(y,y )∈YGG0
+
+Let a 3-SAT problem containing k ordered clauses C1 . . . Ck
+be given. Each clause Ci consists of a conjunction of literals, which is either a variable a or its complement a. We
+construct graphs G = (V, E) and G0 = (V 0 , E 0 ) as follows.
+• The graph G has k layers. Every layer corresponds to
+one clause. Each layer contains 3 vertices labeled with
+the literals in the corresponding clause. Specifically, for
+a variable a in clause Ci we associate node via , analoguously for a complemented variable b in clause Ci we
+associate node vib̄ .
+• For every pair of vertices vil1 ∈ V and vi+1l2 ∈ V
+where l1 6= l¯2 add an edge (vil1 , vi+1l2 ) to E and set
+c(vil1 ,vi+1l2 ) = −1.
+• For every variable a and every pair of vertices via , vjā ∈
+V where j > i + 1 add an edge (via , vjā ) to E 0 and
+set c0(via ,vjā ) = k. Do so analoguously for every pair of
+variables viā and vja .
+• Add an edge from s to all vertices corresponding to the
+first clause. And an edge to t from all vertices corresponding to the last clause.
+An illustration of this construction can be found in Figure 10.
+Every path P ∈ st-paths(G) that has cost −(k − 1) saturates vertices labelled by non-contradicting literals. We can
+
+10.5. Implementation Details on the Lifted Disjoint
+Paths Solver
+The solver for the lifted disjoint paths problem is implemented in C++ and builds upon Gurobi 7.5. All experiments
+were conducted on a machine with a 6-Core Intel 2.00GHz
+CPU and 128 GB RAM.
+10.6. Optimal data association
+The experiment of Section 7.5 compares the assignments
+of our tracking system with the optimal assignments. We
+elaborate on the details to obtain the optimal assignments.
+We start with the pre-processed input detections, according
+to Section 7.2. For each frame, we compute the intersection
+over union between the detections and ground-truth boxes
+of the respective frame, which forms a weighted bipartite
+graph. Edges with a corresponding intersection over union
+below 0.5 are removed. Then, we use Hungarian matching
+to find a maximum-weight matching. Unmatched detections
+are considered as false positives, while matched detections
+are assigned the corresponding ground-truth label. Thus, we
+obtain the trajectories on the input detections using the optimal assignment. Finally, depending on the time threshold of
+Table 1, trajectories are synthetically splitted at skip-edges
+longer than the specified threshold.
+10.7. Ablation study on post-processing methods.
+Solving the proposed lifted disjoint paths problem establishes the assignment of input detections to object identities
+very close to the best possible assignment (Section 7.5).
+To localize tracked objects also in the frames in which the
+object detector failed to detect them, some trackers apply
+an additional object detector on these frames based on the
+available input detections. This can be seen as performing interpolation and extrapolation, if viewed from the perspective
+of data association in a tracking-by-detection framework,
+e.g. see (Bergmann et al., 2019). As a result, improvements
+can be achieved from extending trajectories to image areas without input detections by applying of a very accurate
+object detector.
+In order to make our tracking performance comparable with
+other trackers, we follow this strategy and employ an interand extrapolation based on (Bergmann et al., 2019).
+
+Lifted Disjoint Paths with Application in Multiple Object Tracking
+
+During the inter- and extrapolation, output detections (coming from the lifted disjoint paths solver) are preserved. In
+particular, the detections are not rejected, reshaped, neither
+are their labels changed by Tracktor. Instead, we apply
+Tracktor to recover further locations of an object in the
+frames where detections of the object were missing. The
+procedure is based on its trajectory obtained from the lifted
+disjoint paths solver. Note that our adaption ignores additional, unassigned input detections, whereas the original
+implementation (Bergmann et al., 2019) of Tracktor fuses
+the detections coming from Tracktor’s detector with detections provided by the dataset.
+Method
+Assignment
+Assignment (optimal)
+Assignment+SI
+Assignment+SI∗
+Assignment+VI
+Assignment+VI+VE
+Assignment+VI+VE+SI
+
+MOTA
+52.8
+53.4
+57.8
+59.5
+59.6
+65.7
+67.0
+
+IDF1
+64.3
+66.8
+67.6
+68.9
+68.5
+71.5
+72.4
+
+Table 3. Ablation study on inter- and extrapolation, evaluated on
+the MOT17 train set. SI = spatial interpolation only on sequences
+filmed from a static camera, SI∗ = spatial interpolation on all
+sequences, VI = visual interpolation, VE = visual extrapolation.
+Assignment and assignment (optimal) denote the results of the
+lifted disjoint paths problem and the optimal assignment, as reported in Section 7.5 given 2s time gap. Note that Tracktor’s object
+detector is fine-tuned on MOT17Det. In our experiments, this resulted in bigger improvements on the MOT17 training set than on
+the test set, compare Table 2.
+
+Table 3 reports the influence of employing inter- and extrapolation. The first two rows repeat values from Table 1
+given the maximal 2s time gap. Since our solver produces
+nearly optimal data assignemt with respect to the used input detections, further improvements can only be achieved
+by applying interpolation and extrapolation on the tracks
+obtained by the solver.
+We compare the visual interpolation (VI) as well as visual extrapolation (VE), both using the method of (Bergmann et al.,
+2019) with spatial interpolation (SI). For SI, we employ
+linear interpolation based solely on the geometric bounding
+box information.
+The interpolation SI is applied only to sequences with a
+fixed camera in order to guarantee robust approximations.
+Still, the improvements by Assignment+SI over the baseline
+is evident. Especially the MOTA metric, which measures
+mainly the coverage of objects by detections, improves
+by about 10%. We also evaluate spatial interpolation for
+all sequences (SI∗ ), which improves the tracker further to
+59.5 MOTA and 68.9 IDF1. However, performing spatial
+
+interpolation on sequences with moving cameras can lead
+to error propagation. Thus, our final tracker Lif_T relies
+on the more robust visual interpolation and employs spatial
+interpolation only on sequences filmed from a static camera.
+On the contrary, the visual interpolation based on
+(Bergmann et al., 2019) can be applied robustly to all sequences, but only in situations where the object is visible.
+Accordingly, the method Assignment+VI further improves
+over the baseline, as it is applied to more frames.
+Recovering the position of tracked objects also outside of the
+time range of its computed trajectory (Assignment+VI+VE)
+further helps to improve the tracking accuracy, enhancing
+MOTA by about 20% and IDF1 by about 10% IDF1, as
+VE extends computed trajectory thereby achieving longer
+identity consistencies.
+Finally, we employ spatial interpolation on the remaining
+cases where detections are missing and the objects are fully
+occluded (Assignment+VI+VE+SI) resulting in a slight improvement over Assignment+VI+VE.
+Note that we use the method Assignment+VI+VE+SI to
+evaluate our tracker on the MOT15, MOT16 and MOT17
+test set, as reported in Table 2. The impact of the postprocessing on the training set using Tracktor seems to be
+very high. We conjectured this might be due to the fact
+that Tracktor’s object detector is trained on MOT17Det
+(which are the detections of MOT17), leading to some degree of overfitting. Note that Tracktor is not trained the
+MOT17 tracking ground truth, so that it is still regarded as
+a meaningful validation procedure (Bergmann et al., 2019).
+Therefore, we created another tracker Lif_TsimInt that uses
+a simple interpolation, namely only linear interpolation between detections of a trajectory, for all sequences. The
+tracker thus corresponds to Assignment+SI∗ . Comparing
+Table 3 with Table 2, we see that indeed, the impact of the
+post-processing on the test set is significantly lower. We
+conclude that while the post-processing improves the tracking performance, the main performance of our tracker is due
+to our contributions.
+Recall that most offline tracking systems obtain trajectories by solving a data association problem, e.g. (Henschel
+et al., 2018; Tang et al., 2017; Ristani & Tomasi, 2018).
+Our proposed tracker is able to achieve near-optimal results
+with respect to the input detections. Applying interpolation
+and extrapolation further improves the results, and makes
+it conceptually comparable to Tracktor. Still, with postprocessing on our computed data-association, we improve
+over Tracktor by 25%. We argue that solving the data association accurately is important to obtain a final high-quality
+result after post-processing.
+
+Lifted Disjoint Paths with Application in Multiple Object Tracking
+
+10.8. Further Details on the Feature Fusion Network.
+We discuss in detail the neural network which fuses the
+input features, thereby extending Section 7.3.
+Architecture of the fusion network. Considering one assignment hypothesis represented by an edge e = vw, the
+DeepMatching densities ρ ∈ [0, 1]6 as well the temporal
+distance t between the corresponding detections v and w
+serve as a confidence score for the remaining input features.
+They describe which of the input features is a reliable metric
+for a given assignment hypothesis, but they are not giving
+any information about the correctness of the assignment
+hypothesis. We transform the density features non-linearly
+and denote them together with the temporal distance as
+control features C(e) := (log(ρ), t) ∈ R6 × [0, 2]. The
+remaining features described in Section 7.3 are denoted as
+F(e) ∈ [0, 1]n .
+One plausible architecture is to use a convex combination
+of the input features, such that the coefficients depend on
+the control features. To this end, let αi (C(e), Wαi ) for
+i = 1, · · · , n denote a neural network with the control
+features as input and Wαi as learnable weights. Further,
+let βi (F(e)i , Wβi ) for i = 1, · · · , n be a neural network
+applied to i-th feature of F(e), with learnable weights Wβi .
+The input features and control features can then be fused via
+n
+X
+
+αi (C(e), Wαi )βi (F(e)i , Wβi ),
+
+(23)
+
+i=1
+
+such that
+
+n
+X
+
+αi (C(e), Wαi ) = 1.
+
+Figure 11. The architecture of the edge classifier used in Lif_T.
+FC-i denotes a fully-connected layer with i nodes in as outputs.
+Using a concatenation with subsequent fully connected layer, m
+control features and n input features are fused.
+
+dominates the number of true positive edges (pairs of detections belonging to the same person).
+To address this issue, the network is trained on a randomly
+sampled subset of all possible edges, such that the ratio of
+true positive edges and true negative edges per time distance
+between the end nodes of the edges remains fixed. The
+maximal temporal distance of an edge is set to 2 seconds,
+allowing to recover persons even after long occlusions.
+The weights of the fusion network are optimized according
+to the binary cross-entropy loss. We employ stochastic gradient descent with the learning rate set to 10−2 and Nesterov
+momentum set to 0.9, for a total of 10 epochs. Training and
+inference is performed using Pytorch 1.3 on a Nvidia RTX
+2080 Ti.
+
+(24)
+
+i=1
+
+To ensure stable training, (23) should be applied to a sigmoid
+function and trained using binary cross-entropy loss.
+Nonetheless, our tracker implementation employs neural
+network based mainly on a combination of relu units and
+fully connected layers, which performed slightly better, still
+sharing the idea of seperating the input into control features
+and input features. The detailed architecture is depicted in
+Figure 11.
+Training details. Training of the neural network is performed directly on the (preprocessed) input detections. Labels are retrieved by assigning each detection to the best
+fitting ground-truth bounding box. Detections with ambiguous assignments are ignored within the training phase.
+In order to train the edge classifier, special care has to be
+taken as the training set is highly imbalanced. The number of edges which correspond to true negatives (pairs of
+detections which do not belong to the same person) clearly
+
+Accuracy of the fusion network. The performance of a
+tracking system depends highly on the accuracy of the edge
+classifier (and the corresponding edge weights).
+Therefore, we report our evaluation of the edge classifier
+on all training sequences of the filtered MOT17 train set in
+Table 4. Together with Table 5 and Table 2, it shows that
+improvements in the tracking features directly correlate to
+high quality tracking results thanks to the proposed solver.
+While Table 4 shows very good performance of the edge
+classifier, a powerful graph model and solver is still crucial
+to obtain high quality tracking results. Even small errors
+(we observed 5% maximal error) in the edge classifier can
+cause many errors in the tracking results if an unsuitable procedure is used. Also note that for training the edge classifier,
+detections with ambiguous assignment to the ground truth
+boxes were ignored. So, these potentially difficult cases are
+excluded int the evaluation of the edge classifier. Especially
+the interpolation and extrapolation is prone to error propagation, once a single identity switch has been created, which
+heavily affects, among others, the IDF1 score. Our lifted
+
+Lifted Disjoint Paths with Application in Multiple Object Tracking
+
+Sequence
+
+Acc ↑
+
+Prec ↑
+
+TPR ↑
+
+TNR ↑
+
+MOT17-02-DPM
+MOT17-04-DPM
+MOT17-05-DPM
+MOT17-09-DPM
+MOT17-10-DPM
+MOT17-11-DPM
+MOT17-13-DPM
+MOT17-02-SDP
+MOT17-04-SDP
+MOT17-05-SDP
+MOT17-09-SDP
+MOT17-10-SDP
+MOT17-11-SDP
+MOT17-13-SDP
+MOT17-02-FRCNN
+MOT17-04-FRCNN
+MOT17-05-FRCNN
+MOT17-09-FRCNN
+MOT17-10-FRCNN
+MOT17-11-FRCNN
+MOT17-13-FRCNN
+
+1.00
+1.00
+0.95
+1.00
+1.00
+1.00
+0.99
+1.00
+1.00
+0.99
+0.97
+0.99
+1.00
+0.99
+1.00
+1.00
+0.99
+0.99
+0.99
+1.00
+0.99
+
+0.99
+0.98
+0.95
+0.98
+0.99
+1.00
+0.97
+0.96
+0.98
+0.92
+0.81
+0.94
+0.99
+0.90
+0.98
+0.97
+0.94
+0.97
+0.95
+0.99
+0.90
+
+1.00
+0.99
+1.00
+0.98
+0.99
+0.99
+0.96
+1.00
+0.98
+1.00
+0.99
+0.97
+0.99
+0.96
+1.00
+0.99
+1.00
+0.98
+0.98
+0.99
+0.95
+
+1.00
+1.00
+0.99
+1.00
+1.00
+1.00
+1.00
+1.00
+1.00
+0.98
+0.97
+1.00
+1.00
+0.99
+1.00
+1.00
+1.00
+1.00
+1.00
+1.00
+0.99
+
+Table 4. Performance metrics on the edge classifier. The performance is measured in terms of the accuracy (Acc), precision (Prec),
+true positive rate (TPR) and true negative rate (TNR). The arrows
+indicate that higher metric values are better.
+
+disjoint paths formulation can be advantageous, since lifted
+edges aggregate multiple edge classifiers which can correct
+individual wrong classifications of single edges.
+10.9. Extended Quantitative Results
+We provide additional evaluations on our tracking system
+as well as on the lifted disjoint paths solver.
+Detailed tracking evaluations. We provide the evaluations of the MOT15, MOT16, MOT17 test sets as well as
+the MOT17 train set per sequence in Table 5. In addition, the
+table contains the solver time (STime) in seconds, needed
+to solve the corresponding lifted disjoint paths problem.
+
+Lifted Disjoint Paths with Application in Multiple Object Tracking
+
+2D MOT15
+
+MOT16
+
+MOT17-Test
+
+MOT17-Train
+
+Sequence
+
+MOTA↑ IDF1↑ MT↑ ML↓ FP↓
+
+FN↓
+
+IDS↓ Frag↓ STime↓
+
+MOT17-02-DPM
+MOT17-04-DPM
+MOT17-05-DPM
+MOT17-09-DPM
+MOT17-10-DPM
+MOT17-11-DPM
+MOT17-13-DPM
+MOT17-02-FRCNN
+MOT17-04-FRCNN
+MOT17-05-FRCNN
+MOT17-09-FRCNN
+MOT17-10-FRCNN
+MOT17-11-FRCNN
+MOT17-13-FRCNN
+MOT17-02-SDP
+MOT17-04-SDP
+MOT17-05-SDP
+MOT17-09-SDP
+MOT17-10-SDP
+MOT17-11-SDP
+MOT17-13-SDP
+MOT17-Train
+
+40.5
+69.9
+58.2
+72.9
+67.4
+67.3
+63.6
+47.4
+67.5
+60.2
+71.5
+73.2
+73.1
+77.1
+55.0
+77.7
+64.0
+73.0
+75.0
+74.4
+70.8
+67.0
+
+50.3
+73.9
+67.0
+71.6
+70.2
+73.9
+67.2
+57.2
+74.1
+68.9
+72.9
+76.2
+78.8
+75.8
+61.3
+81.8
+69.5
+73.0
+78.6
+78.4
+71.4
+72.4
+
+13
+41
+31
+14
+26
+24
+45
+15
+38
+35
+14
+33
+32
+68
+16
+46
+41
+14
+35
+36
+62
+679
+
+29
+19
+22 298
+40
+40
+1
+58
+8
+106
+26
+55
+36
+64
+22
+89
+21
+98
+36
+73
+1
+54
+2
+270
+18
+82
+10 203
+16
+65
+13 243
+22 105
+1
+69
+2
+349
+14 115
+24 200
+364 2655
+
+11017 26
+23
+127
+13986 38
+41
+1521
+2824
+27
+65
+36
+1370
+15
+7
+59
+4043
+39
+82
+173
+3017
+11
+28
+115
+4127
+43
+48
+59
+9656
+26
+27
+229
+15310 29
+13
+1535
+2651
+30
+62
+92
+1451
+10
+7
+51
+3096
+73 145
+398
+2436
+18
+27
+133
+2394
+73
+89
+388
+8236
+52
+50
+586
+10296 49
+66
+4133
+2351
+33
+84
+80
+1356
+12
+12
+127
+2759 105 160
+756
+2277
+27
+36
+198
+3150
+55
+81
+364
+107803 791 1153 11430
+
+MOT17-01-DPM
+MOT17-03-DPM
+MOT17-06-DPM
+MOT17-07-DPM
+MOT17-08-DPM
+MOT17-12-DPM
+MOT17-14-DPM
+MOT17-01-FRCNN
+MOT17-03-FRCNN
+MOT17-06-FRCNN
+MOT17-07-FRCNN
+MOT17-08-FRCNN
+MOT17-12-FRCNN
+MOT17-14-FRCNN
+MOT17-01-SDP
+MOT17-03-SDP
+MOT17-06-SDP
+MOT17-07-SDP
+MOT17-08-SDP
+MOT17-12-SDP
+MOT17-14-SDP
+
+48.3
+73.3
+58.1
+44.4
+34.7
+48.3
+36.1
+47.7
+72.2
+60.4
+44.0
+31.9
+47.3
+36.2
+47.8
+78.2
+60.3
+45.8
+34.8
+47.3
+38.3
+
+58.1
+70.1
+64.7
+52.3
+47.4
+62.3
+48.8
+58.1
+71.8
+63.7
+54.9
+43.3
+58.0
+49.0
+57.8
+77.3
+65.1
+55.0
+47.7
+60.7
+51.4
+
+8
+82
+61
+7
+18
+18
+12
+8
+71
+68
+8
+17
+16
+16
+9
+92
+67
+8
+18
+18
+15
+
+11
+17
+77
+21
+37
+41
+77
+10
+17
+61
+20
+37
+43
+72
+10
+13
+64
+18
+34
+42
+69
+
+68
+3560
+178
+155
+254
+35
+268
+246
+2664
+279
+279
+383
+37
+629
+346
+3778
+305
+285
+429
+158
+630
+
+3258
+24276
+4728
+9176
+13507
+4437
+11449
+3119
+26277
+4358
+9110
+13973
+4521
+11061
+3008
+18879
+4345
+8793
+13288
+4394
+10662
+
+10
+160
+28
+60
+32
+11
+91
+7
+124
+32
+63
+35
+11
+108
+10
+132
+33
+71
+48
+14
+109
+
+19
+256
+155
+209
+44
+52
+239
+24
+250
+207
+227
+59
+34
+358
+31
+323
+217
+280
+69
+53
+370
+
+38
+24311
+113
+297
+146
+68
+323
+79
+11678
+203
+281
+130
+84
+359
+95
+16219
+144
+483
+202
+85
+376
+
+MOT16-01
+MOT16-03
+MOT16-06
+MOT16-07
+MOT16-08
+MOT16-12
+MOT16-14
+
+48.3
+73.0
+58.2
+45.6
+43.4
+50.2
+36.1
+
+58.2
+69.9
+64.7
+53.4
+55.7
+64.0
+48.8
+
+8
+80
+62
+7
+18
+18
+12
+
+10
+17
+77
+16
+24
+37
+77
+
+78
+3217
+3732 24329
+249 4548
+189 8637
+284 9149
+44
+4072
+268 11449
+
+10
+159
+29
+57
+32
+11
+91
+
+19
+310
+159
+212
+44
+51
+239
+
+38
+24311
+113
+297
+146
+68
+323
+
+ADL-Rundle-1
+ADL-Rundle-3
+AVG-TownCentre
+ETH-Crossing
+ETH-Jelmoli
+ETH-Linthescher
+KITTI-16
+KITTI-19
+PETS09-S2L2
+TUD-Crossing
+Venice-1
+
+39.6
+59.2
+61.8
+57.6
+51.4
+53.7
+36.2
+43.3
+56.9
+88.0
+45.8
+
+60.8
+69.9
+67.3
+69.3
+67.1
+62.2
+32.7
+49.4
+43.6
+90.9
+62.1
+
+13
+23
+96
+7
+18
+42
+5
+11
+9
+11
+9
+
+2
+7
+33
+9
+14
+98
+1
+17
+2
+0
+3
+
+2277
+902
+417
+35
+520
+318
+456
+467
+476
+64
+905
+
+44
+29
+99
+3
+12
+21
+108
+249
+152
+6
+7
+
+175
+42
+213
+18
+44
+95
+60
+142
+225
+13
+20
+
+325
+153
+20
+2
+20
+11
+57
+135
+180
+13
+30
+
+3303
+3217
+2217
+387
+701
+3795
+521
+2315
+3531
+62
+1561
+
+Table 5. We provide the results of our tracker Lif_T, evaluated per sequence. In addition, we provide the time necessary to solve the
+corresponding lifted disjoint path problem instance (STime), in seconds. Arrows indicate whether low or high metric values are better.
+Tracking results on the test sets were evaluated by the MOTChallenge server https://www.motchallenge.net
+
+
